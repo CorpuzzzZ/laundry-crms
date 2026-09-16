@@ -1,0 +1,486 @@
+using System;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+using CRM.WinForms.UI;
+
+namespace CRM.WinForms.Forms
+{
+    public class OrdersForm : Form
+    {
+
+        /// <summary>Raised when user clicks New Order (FAB or button).</summary>
+        public event EventHandler? NewOrderRequested;
+
+        /// <summary>Raised when user double-clicks or opens an order for editing.</summary>
+        public event EventHandler<int>? EditOrderRequested;
+        private readonly OrderApiService _orderService = new();
+
+        // UI
+        private TextBox txtSearch = null!;
+        private ComboBox cmbStatus = null!;
+        private DateTimePicker dtpFrom = null!;
+        private DateTimePicker dtpTo = null!;
+        private Button btnSearch = null!;
+        private Button btnNew = null!;
+        private Button btnEdit = null!;
+        private Button btnDelete = null!;
+        private Button btnRefresh = null!;
+        private DataGridView dgvOrders = null!;
+        private Label lblTotal = null!;
+        private Label lblPageInfo = null!;
+        private Button btnPrev = null!;
+        private Button btnNext = null!;
+
+        // State
+        private int _currentPage = 1;
+        private int _pageSize = 20;
+        private int _totalPages = 1;
+        private int _totalCount = 0;
+
+        public OrdersForm()
+        {
+            InitializeComponent();
+            Load += async (s, e) => await LoadDataAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Text = "Order Management";
+            Size = new Size(1300, 750);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Theme.BackgroundColor;
+            Font = Theme.BodyFont;
+
+            // ============ TOP: FILTERS ============
+            var pnlFilter = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 80,
+                BackColor = Color.White,
+                Padding = new Padding(20, 15, 20, 15)
+            };
+
+            var lblSearch = new Label
+            {
+                Text = "Search",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(20, 5),
+                AutoSize = true
+            };
+            txtSearch = new TextBox
+            {
+                Location = new Point(20, 25),
+                Width = 250,
+                Font = Theme.BodyFont,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            txtSearch.KeyPress += async (s, e) => { if (e.KeyChar == (char)Keys.Enter) await SearchAsync(); };
+
+            var lblStatus = new Label
+            {
+                Text = "Status",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(290, 5),
+                AutoSize = true
+            };
+            cmbStatus = new ComboBox
+            {
+                Location = new Point(290, 25),
+                Width = 140,
+                Font = Theme.BodyFont,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbStatus.Items.Add("All Statuses");
+            cmbStatus.SelectedIndex = 0;
+            cmbStatus.SelectedIndexChanged += async (s, e) => await SearchAsync();
+
+            var lblFrom = new Label
+            {
+                Text = "From",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(450, 5),
+                AutoSize = true
+            };
+            dtpFrom = new DateTimePicker
+            {
+                Location = new Point(450, 25),
+                Width = 130,
+                Font = Theme.BodyFont,
+                Format = DateTimePickerFormat.Short,
+                Value = DateTime.Today.AddDays(-30)
+            };
+
+            var lblTo = new Label
+            {
+                Text = "To",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(600, 5),
+                AutoSize = true
+            };
+            dtpTo = new DateTimePicker
+            {
+                Location = new Point(600, 25),
+                Width = 130,
+                Font = Theme.BodyFont,
+                Format = DateTimePickerFormat.Short,
+                Value = DateTime.Today
+            };
+
+            btnSearch = new Button
+            {
+                Text = "Ã°Å¸â€Â Search",
+                Location = new Point(750, 23),
+                Width = 100,
+                Height = 32
+            };
+            Theme.StylePrimaryButton(btnSearch);
+            btnSearch.Click += async (s, e) => await SearchAsync();
+
+            pnlFilter.Controls.AddRange(new Control[]
+            {
+                lblSearch, txtSearch, lblStatus, cmbStatus,
+                lblFrom, dtpFrom, lblTo, dtpTo, btnSearch
+            });
+
+            // ============ TOOLBAR ============
+            var pnlToolbar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 60,
+                BackColor = Color.White,
+                Padding = new Padding(20, 10, 20, 10)
+            };
+
+            btnNew = new Button
+            {
+                Text = "Ã¢Å¾â€¢ New Order",
+                Location = new Point(20, 12),
+                Width = 130,
+                Height = 36
+            };
+            Theme.StyleSuccessButton(btnNew);
+            btnNew.Click += (s, e) => CreateOrder();
+
+            btnEdit = new Button
+            {
+                Text = "Ã¢Å“ÂÃ¯Â¸Â View / Edit",
+                Location = new Point(160, 12),
+                Width = 130,
+                Height = 36
+            };
+            Theme.StylePrimaryButton(btnEdit);
+            btnEdit.Click += (s, e) => EditSelected();
+
+            btnDelete = new Button
+            {
+                Text = "Ã°Å¸â€”â€˜Ã¯Â¸Â Delete",
+                Location = new Point(300, 12),
+                Width = 110,
+                Height = 36
+            };
+            Theme.StyleDangerButton(btnDelete);
+            btnDelete.Click += async (s, e) => await DeleteSelectedAsync();
+
+            btnRefresh = new Button
+            {
+                Text = "Ã°Å¸â€â€ž Refresh",
+                Location = new Point(420, 12),
+                Width = 110,
+                Height = 36
+            };
+            Theme.StyleSecondaryButton(btnRefresh);
+            btnRefresh.Click += async (s, e) => await LoadDataAsync();
+
+            // Role-based visibility
+            var user = SessionManager.CurrentUser;
+            bool canModify = user?.CanModifyOrders == true;  // Manager + Crew only (Admin is read-only)
+            btnNew.Visible = canModify;
+            btnEdit.Visible = canModify;
+            btnDelete.Visible = canModify;
+
+            pnlToolbar.Controls.AddRange(new Control[]
+            {
+                btnNew, btnEdit, btnDelete, btnRefresh
+            });
+
+            // ============ GRID ============
+            dgvOrders = new DataGridView
+            {
+                Dock = DockStyle.Fill
+            };
+            Theme.StyleDataGridView(dgvOrders);
+
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "OrderNumber",
+                HeaderText = "Order #",
+                Width = 140
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "CustomerName",
+                HeaderText = "Customer",
+                FillWeight = 120
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "CustomerPhone",
+                HeaderText = "Phone",
+                Width = 120
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "OrderDate",
+                HeaderText = "Order Date",
+                Width = 130,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm" }
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "StatusName",
+                HeaderText = "Status",
+                Width = 120
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "TotalItems",
+                HeaderText = "Items",
+                Width = 70,
+                DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleRight }
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "TotalAmount",
+                HeaderText = "Total",
+                Width = 110,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Format = "N2",
+                    Alignment = DataGridViewContentAlignment.MiddleRight
+                }
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Priority",
+                HeaderText = "Priority",
+                Width = 90
+            });
+            dgvOrders.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "OrderId",
+                HeaderText = "ID",
+                Visible = false
+            });
+
+            dgvOrders.SelectionChanged += (s, e) => UpdateButtonsState();
+            dgvOrders.CellDoubleClick += async (s, e) =>
+            {
+                if (e.RowIndex >= 0) await EditSelectedAsync();
+            };
+
+            // ============ PAGINATION ============
+            var pnlPagination = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 50,
+                BackColor = Color.White,
+                Padding = new Padding(20, 10, 20, 10)
+            };
+
+            lblTotal = new Label
+            {
+                Text = "Total: 0 orders",
+                Font = Theme.BodyFont,
+                ForeColor = Theme.TextDarkColor,
+                Location = new Point(20, 15),
+                AutoSize = true
+            };
+
+            btnPrev = new Button
+            {
+                Text = "Ã¢â€”â€ž Prev",
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Width = 80,
+                Height = 30
+            };
+            Theme.StyleSecondaryButton(btnPrev);
+            btnPrev.Click += async (s, e) => await ChangePageAsync(-1);
+
+            lblPageInfo = new Label
+            {
+                Text = "Page 1 of 1",
+                Font = Theme.BodyFont,
+                ForeColor = Theme.TextDarkColor,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Size = new Size(100, 30)
+            };
+
+            btnNext = new Button
+            {
+                Text = "Next Ã¢â€“Âº",
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Width = 80,
+                Height = 30
+            };
+            Theme.StyleSecondaryButton(btnNext);
+            btnNext.Click += async (s, e) => await ChangePageAsync(1);
+
+            pnlPagination.Controls.AddRange(new Control[]
+            {
+                lblTotal, btnPrev, lblPageInfo, btnNext
+            });
+
+            pnlPagination.Resize += (s, e) =>
+            {
+                btnPrev.Location = new Point(pnlPagination.Width - 290, 12);
+                lblPageInfo.Location = new Point(pnlPagination.Width - 200, 12);
+                btnNext.Location = new Point(pnlPagination.Width - 90, 12);
+            };
+
+            // ============ ADD TO FORM ============
+            Controls.Add(dgvOrders);
+            Controls.Add(pnlPagination);
+            Controls.Add(pnlToolbar);
+            Controls.Add(pnlFilter);
+
+            UpdateButtonsState();
+        }
+
+        private void UpdateButtonsState()
+        {
+            var hasSelection = dgvOrders.SelectedRows.Count > 0;
+            btnEdit.Enabled = hasSelection;
+            btnDelete.Enabled = hasSelection;
+        }
+
+        private async Task LoadDataAsync()
+        {
+            await LoadStatusesAsync();
+
+            var response = await _orderService.GetOrdersAsync(
+                page: _currentPage,
+                pageSize: _pageSize,
+                search: string.IsNullOrWhiteSpace(txtSearch.Text) ? null : txtSearch.Text,
+                statusCode: cmbStatus.SelectedIndex > 0 ? cmbStatus.SelectedItem?.ToString() : null,
+                dateFrom: dtpFrom.Value.Date,
+                dateTo: dtpTo.Value.Date);
+
+            dgvOrders.Rows.Clear();
+
+            foreach (var order in response.Data)
+            {
+                dgvOrders.Rows.Add(
+                    order.OrderNumber,
+                    order.CustomerName,
+                    order.CustomerPhone,
+                    order.OrderDate,
+                    order.StatusName,
+                    order.TotalItems,
+                    order.TotalAmount,
+                    order.Priority,
+                    order.OrderId);
+            }
+
+            if (response.Pagination != null)
+            {
+                _totalPages = response.Pagination.TotalPages;
+                _totalCount = response.Pagination.TotalCount;
+            }
+
+            lblTotal.Text = $"Total: {_totalCount} orders";
+            lblPageInfo.Text = $"Page {_currentPage} of {Math.Max(1, _totalPages)}";
+            btnPrev.Enabled = _currentPage > 1;
+            btnNext.Enabled = _currentPage < _totalPages;
+
+            UpdateButtonsState();
+        }
+
+        private async Task LoadStatusesAsync()
+        {
+            if (cmbStatus.Items.Count > 1) return;
+
+            var statuses = await _orderService.GetStatusesAsync();
+            foreach (var s in statuses)
+                cmbStatus.Items.Add(s.StatusName);
+        }
+
+        private async Task SearchAsync()
+        {
+            _currentPage = 1;
+            await LoadDataAsync();
+        }
+
+        private async Task ChangePageAsync(int delta)
+        {
+            _currentPage += delta;
+            if (_currentPage < 1) _currentPage = 1;
+            if (_currentPage > _totalPages) _currentPage = _totalPages;
+            await LoadDataAsync();
+        }
+
+        private int GetSelectedOrderId()
+        {
+            if (dgvOrders.SelectedRows.Count == 0) return 0;
+            var idCell = dgvOrders.SelectedRows[0].Cells["OrderId"].Value;
+            return idCell != null ? Convert.ToInt32(idCell) : 0;
+        }
+
+        private async Task CreateOrderAsync()
+        {
+            using var form = new OrderDetailsForm(0); // 0 = new order
+            if (form.ShowDialog() == DialogResult.OK)
+            {
+                await LoadDataAsync();
+            }
+        }
+
+        private async Task EditSelectedAsync()
+        {
+            var orderId = GetSelectedOrderId();
+            if (orderId == 0) return;
+
+            using var form = new OrderDetailsForm(orderId);
+            if (form.ShowDialog() == DialogResult.OK)
+            {
+                await LoadDataAsync();
+            }
+        }
+
+        private async Task DeleteSelectedAsync()
+        {
+            var orderId = GetSelectedOrderId();
+            if (orderId == 0) return;
+
+            var orderNumber = dgvOrders.SelectedRows[0].Cells["OrderNumber"].Value?.ToString();
+
+            var confirm = MessageBox.Show(
+                $"Delete order {orderNumber}?\n\nThis action cannot be undone.",
+                "Confirm Delete",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (confirm != DialogResult.Yes) return;
+
+            var (success, error) = await _orderService.DeleteOrderAsync(orderId);
+            if (success)
+            {
+                MessageBox.Show("Order deleted successfully.", "Success",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await LoadDataAsync();
+            }
+            else
+            {
+                MessageBox.Show($"Failed to delete: {error}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+}

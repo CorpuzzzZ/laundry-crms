@@ -1,0 +1,193 @@
+using System;
+using System.Collections.Generic;
+
+namespace CRM.WinForms.Models
+{
+    public class OrderModel
+    {
+        public int OrderId { get; set; }
+        public string OrderNumber { get; set; } = string.Empty;
+        public int CustomerId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerPhone { get; set; } = string.Empty;
+        public string OrderType { get; set; } = string.Empty;
+        public DateTime OrderDate { get; set; }
+        public string StatusCode { get; set; } = string.Empty;
+        public string StatusName { get; set; } = string.Empty;
+        public string Priority { get; set; } = string.Empty;
+        public decimal Subtotal { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal TotalAmount { get; set; }
+        public decimal? TotalWeight { get; set; }
+        public int TotalItems { get; set; }
+        public string? SpecialInstructions { get; set; }
+        public DateTime? PickupDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public DateTime? ActualPickupDate { get; set; }
+        public DateTime? ActualDeliveryDate { get; set; }
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public List<OrderItemModel> Items { get; set; } = new();
+        public List<OrderPaymentModel> Payments { get; set; } = new();
+    }
+
+    public class OrderItemModel
+    {
+        public int OrderItemId { get; set; }
+        public int ServiceId { get; set; }
+        public string ServiceName { get; set; } = string.Empty;
+        public int? GarmentTypeId { get; set; }
+        public string? GarmentTypeName { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal LineTotal { get; set; }
+        public string? SpecialInstructions { get; set; }
+        public bool IsCompleted { get; set; }
+        public DateTime? CompletedAt { get; set; }
+    }
+
+    public class OrderPaymentModel
+    {
+        public int OrderPaymentId { get; set; }
+        public int PaymentMethodId { get; set; }
+        public string PaymentMethodName { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string? ReferenceNumber { get; set; }
+        public DateTime PaymentDate { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+    }
+
+    public class CreateOrderRequest
+    {
+        public int CustomerId { get; set; }
+        public int BranchId { get; set; } = 1;
+        public string OrderType { get; set; } = "WalkIn";
+        public string Priority { get; set; } = "Normal";
+        public decimal DiscountAmount { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal? TotalWeight { get; set; }
+        public string? SpecialInstructions { get; set; }
+        public DateTime? PickupDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public string? Notes { get; set; }
+        public List<CreateOrderItemRequest> Items { get; set; } = new();
+    }
+
+    public class CreateOrderItemRequest
+    {
+        public int ServiceId { get; set; }
+        public int? GarmentTypeId { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public string? SpecialInstructions { get; set; }
+    }
+
+    public class UpdateOrderRequest
+    {
+        public int CustomerId { get; set; }
+        public string Priority { get; set; } = "Normal";
+        public decimal DiscountAmount { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal? TotalWeight { get; set; }
+        public string? SpecialInstructions { get; set; }
+        public DateTime? PickupDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public string? Notes { get; set; }
+        public List<UpdateOrderItemRequest>? Items { get; set; }
+    }
+
+    public class UpdateOrderItemRequest
+    {
+        public int? OrderItemId { get; set; }
+        public int ServiceId { get; set; }
+        public int? GarmentTypeId { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public string? SpecialInstructions { get; set; }
+    }
+
+    public class OrderStatusChangeRequest
+    {
+        public int StatusId { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    public class CreateOrderPaymentRequest
+    {
+        public int PaymentMethodId { get; set; }
+        public decimal Amount { get; set; }
+        public string? ReferenceNumber { get; set; }
+        public string? Notes { get; set; }
+    }
+
+    // Lookup models
+    public class OrderStatusLookup
+    {
+        public int StatusId { get; set; }
+        public string StatusCode { get; set; } = string.Empty;
+        public string StatusName { get; set; } = string.Empty;
+        public string? ColorCode { get; set; }
+    }
+
+    public class PaymentMethodLookup
+    {
+        public int PaymentMethodId { get; set; }
+        public string MethodCode { get; set; } = string.Empty;
+        public string MethodName { get; set; } = string.Empty;
+    }
+
+    public class CustomerLookup
+    {
+        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string PhonePrimary { get; set; } = string.Empty;
+        public string FullName => $"{FirstName} {LastName}".Trim();
+    }
+
+    public class ServiceLookup
+    {
+        public int ServiceId { get; set; }
+        public string ServiceCode { get; set; } = string.Empty;
+        public string ServiceName { get; set; } = string.Empty;
+        public decimal BasePrice { get; set; }
+        public decimal? PricePerUnit { get; set; }
+        public string UnitOfMeasure { get; set; } = string.Empty;
+    }
+
+    public class GarmentTypeLookup
+    {
+        public int GarmentTypeId { get; set; }
+        public string GarmentCode { get; set; } = string.Empty;
+        public string GarmentName { get; set; } = string.Empty;
+    }
+
+    // API wrapper response
+    public class ApiListResponse<T>
+    {
+        public bool Success { get; set; }
+        public List<T> Data { get; set; } = new();
+        public PaginationInfo? Pagination { get; set; }
+    }
+
+    public class ApiSingleResponse<T>
+    {
+        public bool Success { get; set; }
+        public T? Data { get; set; }
+        public string? Message { get; set; }
+    }
+
+    public class PaginationInfo
+    {
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public int TotalCount { get; set; }
+        public int TotalPages { get; set; }
+    }
+}

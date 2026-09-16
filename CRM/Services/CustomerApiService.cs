@@ -1,0 +1,109 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using CRM.WinForms.Config;
+using CRM.WinForms.Models;
+
+namespace CRM.WinForms.Services
+{
+    public class CustomerApiService
+    {
+        // ============================================================
+        // GET LIST (paged + filtered)
+        // ============================================================
+        public async Task<ApiListResponse<CustomerModel>> GetCustomersAsync(
+            int page = 1,
+            int pageSize = 20,
+            string? search = null,
+            string? customerType = null,
+            bool? isActive = null,
+            bool includeArchived = false)
+        {
+            var url = AppConfig.ApiV1Url($"customers?page={page}&pageSize={pageSize}");
+
+            if (!string.IsNullOrWhiteSpace(search))
+                url += $"&searchTerm={Uri.EscapeDataString(search)}";
+            if (!string.IsNullOrWhiteSpace(customerType))
+                url += $"&customerType={customerType}";
+            if (isActive.HasValue)
+                url += $"&isActive={isActive.Value.ToString().ToLower()}";
+            if (includeArchived)
+                url += "&includeArchived=true";
+
+            var response = await ApiClient.Instance.GetAsync<ApiListResponse<CustomerModel>>(url);
+            return response.Data ?? new ApiListResponse<CustomerModel>();
+        }
+
+        // ============================================================
+        // GET BY ID
+        // ============================================================
+        public async Task<CustomerModel?> GetCustomerByIdAsync(int customerId)
+        {
+            var url = AppConfig.ApiV1Url($"customers/{customerId}");
+            var response = await ApiClient.Instance.GetAsync<ApiSingleResponse<CustomerModel>>(url);
+            return response.Success ? response.Data?.Data : null;
+        }
+
+        // ============================================================
+        // CREATE
+        // ============================================================
+        public async Task<(bool Success, CustomerModel? Customer, string? Error)> CreateCustomerAsync(
+            CreateCustomerRequest request)
+        {
+            var url = AppConfig.ApiV1Url("customers");
+            var response = await ApiClient.Instance.PostAsync<ApiSingleResponse<CustomerModel>>(url, request);
+
+            if (response.Success && response.Data != null && response.Data.Success)
+                return (true, response.Data.Data, null);
+
+            return (false, null, response.Data?.Message ?? response.ErrorMessage ?? "Failed to create customer");
+        }
+
+        // ============================================================
+        // UPDATE
+        // ============================================================
+        public async Task<(bool Success, CustomerModel? Customer, string? Error)> UpdateCustomerAsync(
+            int customerId, UpdateCustomerRequest request)
+        {
+            var url = AppConfig.ApiV1Url($"customers/{customerId}");
+            var response = await ApiClient.Instance.PutAsync<ApiSingleResponse<CustomerModel>>(url, request);
+
+            if (response.Success && response.Data != null && response.Data.Success)
+                return (true, response.Data.Data, null);
+
+            return (false, null, response.Data?.Message ?? response.ErrorMessage ?? "Failed to update customer");
+        }
+
+        // ============================================================
+        // DELETE (soft)
+        // ============================================================
+        public async Task<(bool Success, string? Error)> DeleteCustomerAsync(int customerId)
+        {
+            var url = AppConfig.ApiV1Url($"customers/{customerId}");
+            var response = await ApiClient.Instance.DeleteAsync<object>(url);
+
+            return (response.Success, response.Success ? null : response.ErrorMessage);
+        }
+
+        public async Task<(bool Success, CustomerModel? Customer, string? Error)> RestoreAsync(int customerId)
+        {
+            var url = AppConfig.ApiV1Url($"customers/{customerId}/restore");
+            var response = await ApiClient.Instance.PostAsync<ApiSingleResponse<CustomerModel>>(url, new { });
+
+            if (response.Success && response.Data != null && response.Data.Success)
+                return (true, response.Data.Data, null);
+
+            return (false, null, response.Data?.Message ?? response.ErrorMessage ?? "Failed to restore customer");
+        }
+
+        // ============================================================
+        // LOOKUP (for order dropdown)
+        // ============================================================
+        public async Task<List<CustomerModel>> GetCustomerLookupAsync()
+        {
+            var url = AppConfig.ApiV1Url("customers/lookup");
+            var response = await ApiClient.Instance.GetAsync<ApiSingleResponse<List<CustomerModel>>>(url);
+            return response.Data?.Data ?? new List<CustomerModel>();
+        }
+    }
+}

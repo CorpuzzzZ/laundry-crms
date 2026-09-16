@@ -1,0 +1,155 @@
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace CRM.WinForms.Services
+{
+    public class ApiClient
+    {
+        private static ApiClient? _instance;
+        private readonly HttpClient _httpClient;
+        private string? _authToken;
+
+        public static ApiClient Instance => _instance ??= new ApiClient();
+
+        private ApiClient()
+        {
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true
+            };
+            _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        }
+
+        public void SetToken(string token) => _authToken = token;
+        public void ClearToken() => _authToken = null;
+        public bool IsAuthenticated => !string.IsNullOrEmpty(_authToken);
+
+        public Task<ApiResponse<T>> GetAsync<T>(string url)
+            => SendAsync<T>(HttpMethod.Get, url, null);
+
+        public Task<ApiResponse<T>> PostAsync<T>(string url, object? body = null)
+            => SendAsync<T>(HttpMethod.Post, url, body);
+
+        public Task<ApiResponse<T>> PutAsync<T>(string url, object? body = null)
+            => SendAsync<T>(HttpMethod.Put, url, body);
+
+        public Task<ApiResponse<T>> DeleteAsync<T>(string url)
+            => SendAsync<T>(HttpMethod.Delete, url, null);
+
+        // ── Convenience methods that unwrap the envelope ──────
+        public async Task<T?> GetDataAsync<T>(string url)
+        {
+            var resp = await GetAsync<T>(url);
+            return resp.Success ? resp.Data : default;
+        }
+
+        public async Task<T?> PostDataAsync<T>(string url, object? body = null)
+        {
+            var resp = await PostAsync<T>(url, body);
+            if (!resp.Success)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ApiClient] POST failed for {url}");
+                System.Diagnostics.Debug.WriteLine($"[ApiClient] ErrorMessage: {resp.ErrorMessage}");
+                System.Diagnostics.Debug.WriteLine($"[ApiClient] RawContent: {resp.RawContent}");
+                System.Windows.Forms.MessageBox.Show(
+                    $"POST failed\n\nURL: {url}\n\nError: {resp.ErrorMessage}\n\nRaw: {resp.RawContent}",
+                    "API Debug",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+            }
+            return resp.Success ? resp.Data : default;
+        }
+
+        public async Task<T?> PutDataAsync<T>(string url, object? body = null)
+        {
+            var resp = await PutAsync<T>(url, body);
+            return resp.Success ? resp.Data : default;
+        }
+
+        public async Task<bool> DeleteDataAsync(string url)
+        {
+            var resp = await DeleteAsync<object>(url);
+            return resp.Success;
+        }
+
+        private async Task<ApiResponse<T>> SendAsync<T>(HttpMethod method, string url, object? body)
+        {
+            try
+            {
+                var request = new HttpRequestMessage(method, url);
+                if (!string.IsNullOrEmpty(_authToken))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
+
+                if (body != null)
+                {
+                    var json = JsonSerializer.Serialize(body, new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    });
+                    System.Diagnostics.Debug.WriteLine($"[ApiClient] {method} {url}");
+                    System.Diagnostics.Debug.WriteLine($"[ApiClient] Request body: {json}");
+                    System.IO.File.AppendAllText(
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "api_requests.log"),
+                        $"{DateTime.Now:HH:mm:ss} {method} {url}{Environment.NewLine}BODY: {json}{Environment.NewLine}{Environment.NewLine}");
+                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                }
+                else
+                {
+                    System.IO.File.AppendAllText(
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "api_requests.log"),
+                        $"{DateTime.Now:HH:mm:ss} {method} {url}{Environment.NewLine}BODY: (none){Environment.NewLine}{Environment.NewLine}");
+                }
+
+                var response = await _httpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+                System.IO.File.AppendAllText(
+                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "api_requests.log"),
+                    $"  → {(int)response.StatusCode} {response.StatusCode}{Environment.NewLine}  RESPONSE: {content}{Environment.NewLine}---{Environment.NewLine}{Environment.NewLine}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    T? data = default;
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        try
+                        {
+                            data = JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
+                            {
+                                PropertyNameCaseInsensitive = true
+                            });
+                        }
+                        catch { }
+                    }
+                    return new ApiResponse<T> { Success = true, Data = data, RawContent = content, StatusCode = (int)response.StatusCode };
+                }
+
+                return new ApiResponse<T> { Success = false, ErrorMessage = content, RawContent = content, StatusCode = (int)response.StatusCode };
+            }
+            catch (HttpRequestException ex)
+            {
+                return new ApiResponse<T> { Success = false, ErrorMessage = $"Network error: {ex.Message}" };
+            }
+            catch (TaskCanceledException)
+            {
+                return new ApiResponse<T> { Success = false, ErrorMessage = "Request timed out." };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<T> { Success = false, ErrorMessage = $"Error: {ex.Message}" };
+            }
+        }
+    }
+
+    public class ApiResponse<T>
+    {
+        public bool Success { get; set; }
+        public T? Data { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? RawContent { get; set; }
+        public int StatusCode { get; set; }
+    }
+}

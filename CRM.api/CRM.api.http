@@ -1,0 +1,66 @@
+@CRM.api_HostAddress = https://localhost:7001
+
+### Create Company
+POST {{CRM.api_HostAddress}}/companies
+Content-Type: application/json
+
+{
+  "companyCode": "COMP001",
+  "companyName": "My First Company",
+  "isActive": true,
+  "createdAt": "2026-09-03T09:15:00"
+}
+
+### Get All Companies
+GET {{CRM.api_HostAddress}}/companies
+Accept: application/json
+
+### Create Device
+POST {{CRM.api_HostAddress}}/devices
+Content-Type: application/json
+
+{
+  "companyId": 1,
+  "deviceCode": "DEV001",
+  "deviceName": "Main PC",
+  "isActive": true,
+  "createdAt": "2026-09-03T09:50:00"
+}
+
+### Get All Devices
+GET {{CRM.api_HostAddress}}/devices
+Accept: application/json
+
+### Create Company Database
+POST {{CRM.api_HostAddress}}/company-databases
+Content-Type: application/json
+
+{
+  "companyId": 1,
+  "serverName": "db67054.public.databaseasp.net",
+  "databaseName": "myCrmTenantDB",
+  "isActive": true
+}
+
+### Get All Company Databases
+GET {{CRM.api_HostAddress}}/company-databases
+Accept: application/json
+
+### Test Tenant Connection
+GET {{CRM.api_HostAddress}}/test-tenant/1
+Accept: application/json
+
+### Create Product (Tenant)
+POST {{CRM.api_HostAddress}}/tenant/1/products
+Content-Type: application/json
+
+{
+  "productCode": "PROD001",
+  "productName": "Demo Product",
+  "unitPrice": 99.50,
+  "isActive": true
+}
+
+### Get All Products (Tenant)
+GET {{CRM.api_HostAddress}}/tenant/1/products
+Accept: application/json

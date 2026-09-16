@@ -1,0 +1,944 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.UI.Controls
+{
+    /// <summary>
+    /// Create/edit form for a service with add-ons grid.
+    /// </summary>
+    public class ServiceEditPanel : UserControl
+    {
+        public event EventHandler? Saved;
+        public event EventHandler? Cancelled;
+
+        private readonly ServiceApiService _serviceApi = new(ApiClient.Instance);
+        private readonly int _serviceId;
+        private ServiceModel? _existing;
+        private List<ServiceCategoryModel> _categories = new();
+
+        private Label lblTitle = null!;
+        private Label lblStatus = null!;
+        private Label lblServiceCode = null!;
+
+        private ComboBox cmbServiceType = null!;
+        private RoundedCard? _cardProcessing = null;
+        private RoundedCard? _cardAddOns = null;
+
+        // Labels + controls that toggle visibility by type
+        private Label? lblCategoryField = null;
+        private Label? lblUnitField = null;
+        private Label? lblPricePerUnitField = null;
+        private Label? lblExpressMultiplierField = null;
+
+        private TextBox txtServiceName = null!;
+        private ComboBox cmbCategory = null!;
+        private TextBox txtDescription = null!;
+
+        private NumericUpDown numBasePrice = null!;
+        private NumericUpDown numPricePerUnit = null!;
+        private TextBox txtUnitOfMeasure = null!;
+        private CheckBox chkIsExpress = null!;
+        private NumericUpDown numExpressMultiplier = null!;
+
+        private NumericUpDown numProcessingHours = null!;
+        private CheckBox chkSpecialHandling = null!;
+        private TextBox txtHandlingInstructions = null!;
+        private NumericUpDown numSortOrder = null!;
+        private CheckBox chkIsActive = null!;
+
+        private DataGridView gridAddOns = null!;
+        private Button btnAddAddOn = null!;
+        private Button btnEditAddOn = null!;
+        private Button btnDeleteAddOn = null!;
+
+        private Button btnSave = null!;
+        private Button btnArchive = null!;
+        private Button btnRestore = null!;
+        private Button btnCancel = null!;
+
+        private List<ServiceAddOnModel> _addOns = new();
+
+        public ServiceEditPanel(int serviceId)
+        {
+            _serviceId = serviceId;
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private bool IsCreate => _serviceId == 0;
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+            AutoScroll = true;
+            Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Xl);
+
+            int cardWidth = 900;
+            int contentLeft = Spacing.Lg;
+            int twoColWidth = (cardWidth - Spacing.Xl * 2 - Spacing.Md) / 2;
+            int col2Left = contentLeft + twoColWidth + Spacing.Md;
+            int y = 0;
+
+            // Ã¢â€â‚¬Ã¢â€â‚¬ HEADER Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+            lblTitle = new Label
+            {
+                Text = IsCreate ? "New Service" : "Edit Service",
+                Font = Typography.H1,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(0, y)
+            };
+            Controls.Add(lblTitle);
+            y += lblTitle.Height + Spacing.Md;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // BASIC INFO CARD
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            _cardBasic = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(_cardBasic!);
+
+            int cy = Spacing.Xl;
+            AddSectionTitle(_cardBasic!, "BASIC INFORMATION", contentLeft, cy);
+            cy += 32;
+
+            // Service Type
+            AddFieldLabel(_cardBasic!, "Service Type *", contentLeft, cy);
+            cmbServiceType = new ComboBox
+            {
+                Location = new Point(contentLeft, cy + 22),
+                Width = twoColWidth,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbServiceType.Items.AddRange(new object[] { "Base Service", "Chemical Add-On", "Machine Add-On" });
+            cmbServiceType.SelectedIndex = 0;
+            cmbServiceType.SelectedIndexChanged += (s, e) => ApplyTypeLayout();
+            _cardBasic!.Controls.Add(cmbServiceType);
+            cy += 62;
+
+            // Code | Name
+            AddFieldLabel(_cardBasic!, "Service Code", contentLeft, cy);
+            lblServiceCode = new Label
+            {
+                Location = new Point(contentLeft, cy + 22),
+                Width = twoColWidth,
+                Height = 32,
+                Font = Typography.BodyBold,
+                ForeColor = Colors.Primary,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Text = IsCreate ? "(auto-generated)" : "",
+                BackColor = Colors.Surface
+            };
+            _cardBasic!.Controls.Add(lblServiceCode);
+
+            AddFieldLabel(_cardBasic!, "Service Name", col2Left, cy);
+            txtServiceName = AddTextBox(_cardBasic!, col2Left, cy + 22, twoColWidth);
+            cy += 62;
+
+            // Category | Unit of measure
+            lblCategoryField = new Label
+            {
+                Text = "Category",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(contentLeft, cy),
+                AutoSize = true
+            };
+            _cardBasic!.Controls.Add(lblCategoryField);
+            cmbCategory = new ComboBox
+            {
+                Location = new Point(contentLeft, cy + 22),
+                Width = twoColWidth,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _cardBasic!.Controls.Add(cmbCategory);
+
+            lblUnitField = new Label
+            {
+                Text = "Unit of Measure",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(col2Left, cy),
+                AutoSize = true
+            };
+            _cardBasic!.Controls.Add(lblUnitField);
+            txtUnitOfMeasure = AddTextBox(_cardBasic!, col2Left, cy + 22, twoColWidth);
+            txtUnitOfMeasure.Text = "Item";
+            cy += 62;
+
+            // Description
+            AddFieldLabel(_cardBasic!, "Description", contentLeft, cy);
+            txtDescription = AddTextBox(_cardBasic!, contentLeft, cy + 22, cardWidth - Spacing.Xl * 2);
+            cy += 62;
+
+            _cardBasic!.Height = cy + Spacing.Lg;
+            y += _cardBasic!.Height + Spacing.Xl;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // PRICING CARD
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            _cardPricing = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(_cardPricing!);
+
+            cy = Spacing.Xl;
+            AddSectionTitle(_cardPricing!, "PRICING", contentLeft, cy);
+            cy += 32;
+
+            AddFieldLabel(_cardPricing!, "Base Price (Ã¢â€šÂ±)", contentLeft, cy);
+            numBasePrice = AddNumeric(_cardPricing!, contentLeft, cy + 22, twoColWidth, 2, 1000000);
+            numBasePrice.DecimalPlaces = 2;
+
+            lblPricePerUnitField = new Label
+            {
+                Text = "Price Per Unit (Ã¢â€šÂ±)",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(col2Left, cy),
+                AutoSize = true
+            };
+            _cardPricing!.Controls.Add(lblPricePerUnitField);
+            numPricePerUnit = AddNumeric(_cardPricing!, col2Left, cy + 22, twoColWidth, 2, 1000000);
+            numPricePerUnit.DecimalPlaces = 2;
+            cy += 62;
+
+            chkIsExpress = new CheckBox
+            {
+                Text = "Express Service available",
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody,
+                AutoSize = true,
+                Location = new Point(contentLeft, cy)
+            };
+            chkIsExpress.CheckedChanged += (s, e) =>
+            {
+                numExpressMultiplier.Enabled = chkIsExpress.Checked;
+            };
+            _cardPricing!.Controls.Add(chkIsExpress);
+            cy += 30;
+
+            lblExpressMultiplierField = new Label
+            {
+                Text = "Express Multiplier",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(col2Left, cy - 30),
+                AutoSize = true
+            };
+            _cardPricing!.Controls.Add(lblExpressMultiplierField);
+            numExpressMultiplier = AddNumeric(_cardPricing!, col2Left, cy - 8, twoColWidth, 1, 5);
+            numExpressMultiplier.DecimalPlaces = 2;
+            numExpressMultiplier.Increment = 0.1M;
+            numExpressMultiplier.Enabled = false;
+            cy += 32;
+
+            _cardPricing!.Height = cy + Spacing.Lg;
+            y += _cardPricing!.Height + Spacing.Xl;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // PROCESSING CARD
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            _cardProcessing = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(_cardProcessing);
+
+            cy = Spacing.Xl;
+            AddSectionTitle(_cardProcessing!, "PROCESSING", contentLeft, cy);
+            cy += 32;
+
+            AddFieldLabel(_cardProcessing!, "Processing Time (hours)", contentLeft, cy);
+            numProcessingHours = AddNumeric(_cardProcessing!, contentLeft, cy + 22, twoColWidth, 1, 720);
+            numProcessingHours.Value = 24;
+
+            AddFieldLabel(_cardProcessing!, "Sort Order", col2Left, cy);
+            numSortOrder = AddNumeric(_cardProcessing!, col2Left, cy + 22, twoColWidth, 0, 9999);
+            cy += 62;
+
+            chkSpecialHandling = new CheckBox
+            {
+                Text = "Requires Special Handling",
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody,
+                AutoSize = true,
+                Location = new Point(contentLeft, cy)
+            };
+            _cardProcessing.Controls.Add(chkSpecialHandling);
+            cy += 30;
+
+            AddFieldLabel(_cardProcessing!, "Handling Instructions", contentLeft, cy);
+            txtHandlingInstructions = AddTextBox(_cardProcessing!, contentLeft, cy + 22, cardWidth - Spacing.Xl * 2);
+            cy += 62;
+
+            chkIsActive = new CheckBox
+            {
+                Text = "Service is active",
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody,
+                Checked = true,
+                AutoSize = true,
+                Location = new Point(contentLeft, cy)
+            };
+            _cardProcessing.Controls.Add(chkIsActive);
+            cy += 32;
+
+            _cardProcessing!.Height = cy + Spacing.Lg;
+            y += _cardProcessing!.Height + Spacing.Xl;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // ADD-ONS CARD
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            _cardAddOns = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(_cardAddOns);
+
+            cy = Spacing.Xl;
+            AddSectionTitle(_cardAddOns!, "ADD-ONS", contentLeft, cy);
+            cy += 32;
+
+            // Button row
+            btnAddAddOn = new Button
+            {
+                Text = "+ Add Add-On",
+                Location = new Point(contentLeft, cy),
+                Width = 130,
+                Height = 30,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.Small,
+                Cursor = Cursors.Hand
+            };
+            btnAddAddOn.FlatAppearance.BorderSize = 0;
+            btnAddAddOn.Click += (s, e) => AddAddOn();
+            _cardAddOns.Controls.Add(btnAddAddOn);
+
+            btnEditAddOn = new Button
+            {
+                Text = "Edit",
+                Location = new Point(contentLeft + 140, cy),
+                Width = 70,
+                Height = 30,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.Small,
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            btnEditAddOn.FlatAppearance.BorderColor = Colors.Border;
+            btnEditAddOn.Click += (s, e) => EditAddOn();
+            _cardAddOns.Controls.Add(btnEditAddOn);
+
+            btnDeleteAddOn = new Button
+            {
+                Text = "Remove",
+                Location = new Point(contentLeft + 220, cy),
+                Width = 80,
+                Height = 30,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.Danger,
+                Font = Typography.Small,
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            btnDeleteAddOn.FlatAppearance.BorderColor = Colors.Danger;
+            btnDeleteAddOn.Click += async (s, e) => await DeleteAddOnAsync();
+            _cardAddOns.Controls.Add(btnDeleteAddOn);
+
+            cy += 42;
+
+            // DataGridView
+            gridAddOns = new DataGridView
+            {
+                Location = new Point(contentLeft, cy),
+                Width = cardWidth - Spacing.Xl * 2 - 12,
+                Height = 160,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false,
+                RowHeadersVisible = false,
+                BackgroundColor = Colors.Surface,
+                BorderStyle = BorderStyle.FixedSingle,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                Font = Typography.Body
+            };
+            gridAddOns.Columns.Add(new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Add-On Name", FillWeight = 50 });
+            gridAddOns.Columns.Add(new DataGridViewTextBoxColumn { Name = "Price", HeaderText = "Price", FillWeight = 20 });
+            gridAddOns.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Active", HeaderText = "Active", FillWeight = 15 });
+            gridAddOns.Columns.Add(new DataGridViewTextBoxColumn { Name = "Sort", HeaderText = "Sort", FillWeight = 15 });
+            gridAddOns.SelectionChanged += (s, e) => UpdateAddOnButtons();
+            _cardAddOns.Controls.Add(gridAddOns);
+            cy += 172;
+
+            _cardAddOns!.Height = cy + Spacing.Lg;
+            y += _cardAddOns!.Height + Spacing.Xl;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // STATUS
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            lblStatus = new Label
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Height = 24,
+                Font = Typography.Small,
+                ForeColor = Colors.Danger,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            Controls.Add(lblStatus);
+            y += 32;
+
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            // BUTTONS
+            // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+            btnArchive = new Button
+            {
+                Text = "Archive Service",
+                Location = new Point(cardWidth - 540, y),
+                Width = 160,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.Danger,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand,
+                Visible = false
+            };
+            btnArchive.FlatAppearance.BorderColor = Colors.Danger;
+            btnArchive.Click += async (s, e) => await ArchiveAsync();
+            Controls.Add(btnArchive);
+
+            btnRestore = new Button
+            {
+                Text = "Restore Service",
+                Location = new Point(cardWidth - 320, y),
+                Width = 180,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Success,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand,
+                Visible = false
+            };
+            btnRestore.FlatAppearance.BorderSize = 0;
+            btnRestore.Click += async (s, e) => await RestoreAsync();
+            Controls.Add(btnRestore);
+
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                Location = new Point(cardWidth - 260, y),
+                Width = 120,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnCancel.FlatAppearance.BorderColor = Colors.Border;
+            btnCancel.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            Controls.Add(btnCancel);
+
+            btnSave = new Button
+            {
+                Text = IsCreate ? "Create Service" : "Save Changes",
+                Location = new Point(cardWidth - 130, y),
+                Width = 130,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Click += async (s, e) => await SaveAsync();
+            Controls.Add(btnSave);
+        }
+
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        // Helpers
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        private static void AddSectionTitle(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(x, y),
+                AutoSize = true
+            });
+        }
+
+        private static void AddFieldLabel(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(x, y),
+                AutoSize = true
+            });
+        }
+
+        private static TextBox AddTextBox(Control parent, int x, int y, int width)
+        {
+            var txt = new TextBox
+            {
+                Location = new Point(x, y),
+                Width = width,
+                Height = 32,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Colors.Surface
+            };
+            parent.Controls.Add(txt);
+            return txt;
+        }
+
+        private static NumericUpDown AddNumeric(Control parent, int x, int y, int width, decimal min, decimal max)
+        {
+            var num = new NumericUpDown
+            {
+                Location = new Point(x, y),
+                Width = width,
+                Height = 32,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Colors.Surface,
+                Minimum = min,
+                Maximum = max
+            };
+            parent.Controls.Add(num);
+            return num;
+        }
+
+        private void UpdateAddOnButtons()
+        {
+            bool hasSelection = gridAddOns.SelectedRows.Count > 0;
+            btnEditAddOn.Enabled = hasSelection && !(_existing?.IsArchived ?? false);
+            btnDeleteAddOn.Enabled = hasSelection && !(_existing?.IsArchived ?? false);
+            btnAddAddOn.Enabled = !(_existing?.IsArchived ?? false);
+        }
+
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        // LOAD
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        private async Task LoadAsync()
+        {
+            try
+            {
+                // Load categories
+                _categories = await _serviceApi.GetCategoriesAsync();
+                cmbCategory.Items.Clear();
+                foreach (var c in _categories)
+                    cmbCategory.Items.Add(c.CategoryName);
+                if (cmbCategory.Items.Count > 0)
+                    cmbCategory.SelectedIndex = 0;
+
+                if (IsCreate) return;
+
+                // Load service
+                var svc = await _serviceApi.GetByIdAsync(_serviceId);
+                if (svc == null)
+                {
+                    MessageBox.Show("Service not found.", "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Cancelled?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                _existing = svc;
+                cmbServiceType.SelectedIndex = Math.Max(0, Math.Min(2, svc.ServiceType - 1));
+                ApplyTypeLayout();
+                lblServiceCode.Text = svc.ServiceCode;
+                txtServiceName.Text = svc.ServiceName;
+                txtDescription.Text = svc.Description ?? "";
+                txtUnitOfMeasure.Text = svc.UnitOfMeasure;
+
+                numBasePrice.Value = Math.Min(svc.BasePrice, numBasePrice.Maximum);
+                if (svc.PricePerUnit.HasValue)
+                    numPricePerUnit.Value = Math.Min(svc.PricePerUnit.Value, numPricePerUnit.Maximum);
+                chkIsExpress.Checked = svc.IsExpressService;
+                if (svc.ExpressMultiplier.HasValue)
+                    numExpressMultiplier.Value = Math.Min(svc.ExpressMultiplier.Value, numExpressMultiplier.Maximum);
+                numProcessingHours.Value = Math.Min(svc.ProcessingTimeHours, numProcessingHours.Maximum);
+                chkSpecialHandling.Checked = svc.RequiresSpecialHandling;
+                txtHandlingInstructions.Text = svc.HandlingInstructions ?? "";
+                numSortOrder.Value = Math.Min(svc.SortOrder, numSortOrder.Maximum);
+                chkIsActive.Checked = svc.IsActive;
+
+                // Select category
+                var catIdx = _categories.FindIndex(c => c.ServiceCategoryId == svc.ServiceCategoryId);
+                if (catIdx >= 0) cmbCategory.SelectedIndex = catIdx;
+
+                // Add-ons
+                _addOns = svc.AddOns ?? new();
+                RefreshAddOnGrid();
+
+                // Archive mode
+                var currentUser = SessionManager.CurrentUser;
+                if (svc.IsArchived)
+                {
+                    lblTitle.Text = "Archived Service";
+                    lblTitle.ForeColor = Colors.TextMuted;
+                    btnSave.Visible = false;
+                    btnArchive.Visible = false;
+                    if (currentUser?.IsAdmin == true) btnRestore.Visible = true;
+                    MakeReadOnly();
+                    SetStatus("This service is archived. Restore to make changes.", Colors.Warning);
+                }
+                else if (currentUser?.IsAdmin == true)
+                {
+                    btnArchive.Visible = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Load error: " + ex.Message, Colors.Danger);
+            }
+        }
+
+        private void RefreshAddOnGrid()
+        {
+            gridAddOns.Rows.Clear();
+            foreach (var a in _addOns.OrderBy(x => x.SortOrder))
+            {
+                gridAddOns.Rows.Add(a.AddOnName, a.PriceDisplay, a.IsActive, a.SortOrder);
+            }
+        }
+
+        private void AddAddOn()
+        {
+            using var dlg = new ServiceAddOnDialog(null);
+            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Result != null)
+            {
+                _addOns.Add(dlg.Result);
+                RefreshAddOnGrid();
+            }
+        }
+
+        private void EditAddOn()
+        {
+            if (gridAddOns.SelectedRows.Count == 0) return;
+            var idx = gridAddOns.SelectedRows[0].Index;
+            if (idx < 0 || idx >= _addOns.Count) return;
+
+            using var dlg = new ServiceAddOnDialog(_addOns[idx]);
+            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Result != null)
+            {
+                _addOns[idx] = dlg.Result;
+                RefreshAddOnGrid();
+            }
+        }
+
+        private async Task DeleteAddOnAsync()
+        {
+            if (gridAddOns.SelectedRows.Count == 0) return;
+            var idx = gridAddOns.SelectedRows[0].Index;
+            if (idx < 0 || idx >= _addOns.Count) return;
+
+            var addOn = _addOns[idx];
+            if (MessageBox.Show($"Remove add-on \"{addOn.AddOnName}\"?", "Confirm",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            // For existing services, delete from server
+            if (!IsCreate && addOn.ServiceAddOnId > 0)
+            {
+                try { await _serviceApi.DeleteAddOnAsync(_serviceId, addOn.ServiceAddOnId); }
+                catch (Exception ex) { SetStatus("Delete failed: " + ex.Message, Colors.Danger); return; }
+            }
+
+            _addOns.RemoveAt(idx);
+            RefreshAddOnGrid();
+        }
+
+        private void MakeReadOnly()
+        {
+            foreach (var tb in new[] { txtServiceName, txtDescription, txtUnitOfMeasure, txtHandlingInstructions })
+                if (tb != null) { tb.ReadOnly = true; tb.BackColor = Colors.Background; tb.ForeColor = Colors.TextMuted; }
+
+            if (cmbCategory != null) cmbCategory.Enabled = false;
+            if (numBasePrice != null) numBasePrice.Enabled = false;
+            if (numPricePerUnit != null) numPricePerUnit.Enabled = false;
+            if (numExpressMultiplier != null) numExpressMultiplier.Enabled = false;
+            if (numProcessingHours != null) numProcessingHours.Enabled = false;
+            if (numSortOrder != null) numSortOrder.Enabled = false;
+            if (chkIsExpress != null) chkIsExpress.Enabled = false;
+            if (chkSpecialHandling != null) chkSpecialHandling.Enabled = false;
+            if (chkIsActive != null) chkIsActive.Enabled = false;
+
+            if (btnAddAddOn != null) btnAddAddOn.Enabled = false;
+            if (btnEditAddOn != null) btnEditAddOn.Enabled = false;
+            if (btnDeleteAddOn != null) btnDeleteAddOn.Enabled = false;
+        }
+
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        // SAVE
+        // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+        private void ApplyTypeLayout()
+        {
+            bool isBase = cmbServiceType == null || cmbServiceType.SelectedIndex == 0;
+
+            // ── Hide individual fields ──
+            if (cmbCategory != null) cmbCategory.Visible = isBase;
+            if (lblCategoryField != null) lblCategoryField.Visible = isBase;
+            if (txtUnitOfMeasure != null) txtUnitOfMeasure.Visible = isBase;
+            if (lblUnitField != null) lblUnitField.Visible = isBase;
+            if (numPricePerUnit != null) numPricePerUnit.Visible = isBase;
+            if (lblPricePerUnitField != null) lblPricePerUnitField.Visible = isBase;
+            if (chkIsExpress != null) chkIsExpress.Visible = isBase;
+            if (numExpressMultiplier != null) numExpressMultiplier.Visible = isBase;
+            if (lblExpressMultiplierField != null) lblExpressMultiplierField.Visible = isBase;
+
+            // ── Hide whole cards ──
+            if (_cardProcessing != null) _cardProcessing.Visible = isBase;
+            if (_cardAddOns != null) _cardAddOns.Visible = isBase;
+
+            // ── Reflow: shrink cards + reposition ──
+            int y = 0;
+            if (_cardBasic != null)
+            {
+                _cardBasic.Height = isBase ? 260 : 200;
+                _cardBasic.Location = new Point(0, y);
+                y += _cardBasic.Height + Spacing.Xl;
+            }
+            if (_cardPricing != null)
+            {
+                _cardPricing.Height = isBase ? 170 : 100;
+                _cardPricing.Location = new Point(0, y);
+                y += _cardPricing.Height + Spacing.Xl;
+            }
+            if (_cardProcessing != null && _cardProcessing.Visible)
+            {
+                _cardProcessing.Location = new Point(0, y);
+                y += _cardProcessing.Height + Spacing.Xl;
+            }
+            if (_cardAddOns != null && _cardAddOns.Visible)
+            {
+                _cardAddOns.Location = new Point(0, y);
+                y += _cardAddOns.Height + Spacing.Xl;
+            }
+
+            PerformLayout();
+        }
+
+        private async Task SaveAsync()
+        {
+            if (string.IsNullOrWhiteSpace(txtServiceName.Text))
+            { SetStatus("Service Name is required.", Colors.Danger); txtServiceName.Focus(); return; }
+            if (cmbServiceType.SelectedIndex == 0 && cmbCategory.SelectedIndex < 0)
+            { SetStatus("Category is required for Base services.", Colors.Danger); cmbCategory.Focus(); return; }
+
+            btnSave.Enabled = false;
+            btnSave.Text = "Saving...";
+            SetStatus("", Colors.TextPrimary);
+
+            try
+            {
+                int? catId = cmbServiceType.SelectedIndex == 0 && cmbCategory.SelectedIndex >= 0
+                    ? _categories[cmbCategory.SelectedIndex].ServiceCategoryId
+                    : (int?)null;
+
+                if (IsCreate)
+                {
+                    var request = new CreateServiceRequest
+                    {
+                        ServiceType = cmbServiceType.SelectedIndex + 1,
+                        ServiceCategoryId = catId,
+                        ServiceName = txtServiceName.Text.Trim(),
+                        Description = NullIfEmpty(txtDescription.Text),
+                        BasePrice = numBasePrice.Value,
+                        PricePerUnit = numPricePerUnit.Value > 0 ? numPricePerUnit.Value : (decimal?)null,
+                        UnitOfMeasure = string.IsNullOrWhiteSpace(txtUnitOfMeasure.Text) ? "Item" : txtUnitOfMeasure.Text.Trim(),
+                        ProcessingTimeHours = (int)numProcessingHours.Value,
+                        IsExpressService = chkIsExpress.Checked,
+                        ExpressMultiplier = chkIsExpress.Checked ? numExpressMultiplier.Value : (decimal?)null,
+                        RequiresSpecialHandling = chkSpecialHandling.Checked,
+                        HandlingInstructions = NullIfEmpty(txtHandlingInstructions.Text),
+                        IsActive = chkIsActive.Checked,
+                        SortOrder = (int)numSortOrder.Value,
+                        AddOns = _addOns.Select(a => new CreateServiceAddOnRequest
+                        {
+                            AddOnName = a.AddOnName,
+                            Description = a.Description,
+                            AdditionalPrice = a.AdditionalPrice,
+                            IsActive = a.IsActive,
+                            SortOrder = a.SortOrder
+                        }).ToList()
+                    };
+
+                    var result = await _serviceApi.CreateAsync(request);
+                    if (result == null)
+                    {
+                        SetStatus("Failed to create service. Check server logs.", Colors.Danger);
+                        return;
+                    }
+
+                    MessageBox.Show($"Service created successfully.\n\nCode: {result.ServiceCode}",
+                        "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Saved?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    var request = new UpdateServiceRequest
+                    {
+                        ServiceType = cmbServiceType.SelectedIndex + 1,
+                        ServiceCategoryId = catId,
+                        ServiceName = txtServiceName.Text.Trim(),
+                        Description = NullIfEmpty(txtDescription.Text),
+                        BasePrice = numBasePrice.Value,
+                        PricePerUnit = numPricePerUnit.Value > 0 ? numPricePerUnit.Value : (decimal?)null,
+                        UnitOfMeasure = string.IsNullOrWhiteSpace(txtUnitOfMeasure.Text) ? "Item" : txtUnitOfMeasure.Text.Trim(),
+                        ProcessingTimeHours = (int)numProcessingHours.Value,
+                        IsExpressService = chkIsExpress.Checked,
+                        ExpressMultiplier = chkIsExpress.Checked ? numExpressMultiplier.Value : (decimal?)null,
+                        RequiresSpecialHandling = chkSpecialHandling.Checked,
+                        HandlingInstructions = NullIfEmpty(txtHandlingInstructions.Text),
+                        IsActive = chkIsActive.Checked,
+                        SortOrder = (int)numSortOrder.Value
+                    };
+
+                    var result = await _serviceApi.UpdateAsync(_serviceId, request);
+                    if (result == null)
+                    {
+                        SetStatus("Failed to update service.", Colors.Danger);
+                        return;
+                    }
+
+                    // Sync add-ons: for existing service, add new ones via API
+                    foreach (var a in _addOns.Where(x => x.ServiceAddOnId == 0))
+                    {
+                        await _serviceApi.AddAddOnAsync(_serviceId, new CreateServiceAddOnRequest
+                        {
+                            AddOnName = a.AddOnName,
+                            Description = a.Description,
+                            AdditionalPrice = a.AdditionalPrice,
+                            IsActive = a.IsActive,
+                            SortOrder = a.SortOrder
+                        });
+                    }
+
+                    MessageBox.Show("Service updated successfully.", "Success",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Saved?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Error: " + ex.Message, Colors.Danger);
+            }
+            finally
+            {
+                btnSave.Enabled = true;
+                btnSave.Text = IsCreate ? "Create Service" : "Save Changes";
+            }
+        }
+
+        private async Task ArchiveAsync()
+        {
+            var user = SessionManager.CurrentUser;
+            if (user?.IsAdmin != true) { SetStatus("Only Admin can archive services.", Colors.Danger); return; }
+
+            var confirm = MessageBox.Show(
+                $"Archive service \"{_existing?.ServiceName}\"?\n\nThe service will be hidden from the main list.",
+                "Confirm Archive", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes) return;
+
+            btnArchive.Enabled = false;
+            btnArchive.Text = "Archiving...";
+            try
+            {
+                var ok = await _serviceApi.ArchiveAsync(_serviceId);
+                if (!ok) { SetStatus("Failed to archive.", Colors.Danger); return; }
+                MessageBox.Show("Service archived successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Saved?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex) { SetStatus("Error: " + ex.Message, Colors.Danger); }
+            finally { btnArchive.Enabled = true; btnArchive.Text = "Archive Service"; }
+        }
+
+        private async Task RestoreAsync()
+        {
+            var user = SessionManager.CurrentUser;
+            if (user?.IsAdmin != true) { SetStatus("Only Admin can restore services.", Colors.Danger); return; }
+
+            var confirm = MessageBox.Show(
+                $"Restore service \"{_existing?.ServiceName}\"?",
+                "Confirm Restore", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes) return;
+
+            btnRestore.Enabled = false;
+            btnRestore.Text = "Restoring...";
+            try
+            {
+                var result = await _serviceApi.RestoreAsync(_serviceId);
+                if (result == null) { SetStatus("Failed to restore.", Colors.Danger); return; }
+                MessageBox.Show("Service restored successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Saved?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex) { SetStatus("Error: " + ex.Message, Colors.Danger); }
+            finally { btnRestore.Enabled = true; btnRestore.Text = "Restore Service"; }
+        }
+
+        private void SetStatus(string text, Color color)
+        {
+            lblStatus.Text = text;
+            lblStatus.ForeColor = color;
+        }
+
+        private static string? NullIfEmpty(string? value)
+            => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}

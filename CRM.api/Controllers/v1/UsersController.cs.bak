@@ -1,0 +1,140 @@
+using System;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using CRM.api.Filters;
+using CRM.Domain.Common;
+using CRM.Domain.DTOs.Users;
+using CRM.infrastructure.Services;
+
+namespace CRM.api.Controllers.v1
+{
+    [Route("api/v1/users")]
+    public class UsersController : TenantControllerBase
+    {
+        private readonly IUserService _userService;
+
+        public UsersController(
+            ITenantDbContextFactory tenantFactory,
+            IPermissionService permissionService,
+            IHttpContextAccessor httpContextAccessor,
+            IUserService userService)
+            : base(tenantFactory, permissionService, httpContextAccessor)
+        {
+            _userService = userService;
+        }
+
+        [HttpGet]
+        [RequirePermission(Permissions.UserRead)]
+        public async Task<IActionResult> GetAll([FromQuery] UserFilterDto filter)
+        {
+            var list = await _userService.GetAllAsync(CompanyId, filter);
+            return Success(list);
+        }
+
+        [HttpGet("{id}")]
+        [RequirePermission(Permissions.UserRead)]
+        public async Task<IActionResult> GetById(string id)
+        {
+            var item = await _userService.GetByIdAsync(CompanyId, id);
+            return item == null
+                ? NotFound(new { success = false, message = $"User {id} not found." })
+                : Success(item);
+        }
+
+        [HttpPost]
+        [RequirePermission(Permissions.UserCreate)]
+        public async Task<IActionResult> Create([FromBody] CreateUserDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, errors = ModelState });
+
+            try
+            {
+                var created = await _userService.CreateAsync(CompanyId, dto, UserId);
+                return CreatedAtAction(nameof(GetById), new { id = created.Id }, new
+                {
+                    success = true,
+                    message = "User created successfully.",
+                    data = created
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+        }
+
+        [HttpPut("{id}")]
+        [RequirePermission(Permissions.UserUpdate)]
+        public async Task<IActionResult> Update(string id, [FromBody] UpdateUserDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(new { success = false, errors = ModelState });
+
+            try
+            {
+                var updated = await _userService.UpdateAsync(CompanyId, id, dto, UserId);
+                return updated == null
+                    ? NotFound(new { success = false, message = $"User {id} not found." })
+                    : Success(updated, "User updated successfully.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost("{id}/reset-password")]
+        [RequirePermission(Permissions.UserUpdate)]
+        public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordDto dto)
+        {
+            try
+            {
+                var ok = await _userService.ResetPasswordAsync(CompanyId, id, dto.NewPassword);
+                return ok
+                    ? Success<object?>(null, "Password reset successfully.")
+                    : NotFound(new { success = false, message = $"User {id} not found." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost("{id}/toggle-active")]
+        [RequirePermission(Permissions.UserUpdate)]
+        public async Task<IActionResult> ToggleActive(string id)
+        {
+            var result = await _userService.ToggleActiveAsync(CompanyId, id);
+            return result == null
+                ? NotFound(new { success = false, message = $"User {id} not found." })
+                : Success(result, "User status changed.");
+        }
+
+        [HttpPost("{id}/branches")]
+        [RequirePermission(Permissions.UserUpdate)]
+        public async Task<IActionResult> SetBranches(string id, [FromBody] SetUserBranchesDto dto)
+        {
+            var result = await _userService.SetBranchesAsync(CompanyId, id, dto);
+            return result == null
+                ? NotFound(new { success = false, message = $"User {id} not found." })
+                : Success(result, "Branch assignments updated.");
+        }
+
+        [HttpGet("limit-info")]
+        [RequirePermission(Permissions.UserRead)]
+        public async Task<IActionResult> GetLimitInfo()
+        {
+            var info = await _userService.GetLimitInfoAsync(CompanyId);
+            return Success(info);
+        }
+
+        [HttpGet("assignable-roles")]
+        [RequirePermission(Permissions.UserRead)]
+        public async Task<IActionResult> GetAssignableRoles()
+        {
+            var roles = await _userService.GetAssignableRolesAsync();
+            return Success(roles);
+        }
+    }
+}

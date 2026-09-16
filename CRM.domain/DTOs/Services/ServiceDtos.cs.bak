@@ -1,0 +1,128 @@
+using System;
+using System.Collections.Generic;
+
+namespace CRM.Domain.DTOs.Services
+{
+    // ══════════════════════════════════════════════════════════
+    // SERVICE
+    // ══════════════════════════════════════════════════════════
+    public class ServiceDto
+    {
+        public int ServiceId { get; set; }
+        public int ServiceCategoryId { get; set; }
+        public string ServiceCategoryName { get; set; } = "";
+        public string ServiceCode { get; set; } = "";
+        public string ServiceName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal? PricePerUnit { get; set; }
+        public string UnitOfMeasure { get; set; } = "Item";
+        public int ProcessingTimeHours { get; set; }
+        public bool IsExpressService { get; set; }
+        public decimal? ExpressMultiplier { get; set; }
+        public bool RequiresSpecialHandling { get; set; }
+        public string? HandlingInstructions { get; set; }
+        public bool IsActive { get; set; }
+        public int SortOrder { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+
+        // Archive
+        public bool IsArchived { get; set; }
+        public DateTime? ArchivedAt { get; set; }
+
+        // Add-ons
+        public List<ServiceAddOnDto> AddOns { get; set; } = new();
+    }
+
+    public class CreateServiceDto
+    {
+        public int ServiceCategoryId { get; set; }
+        public string ServiceName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal? PricePerUnit { get; set; }
+        public string UnitOfMeasure { get; set; } = "Item";
+        public int ProcessingTimeHours { get; set; } = 24;
+        public bool IsExpressService { get; set; }
+        public decimal? ExpressMultiplier { get; set; }
+        public bool RequiresSpecialHandling { get; set; }
+        public string? HandlingInstructions { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int SortOrder { get; set; } = 0;
+
+        // Optional initial add-ons
+        public List<CreateServiceAddOnDto> AddOns { get; set; } = new();
+    }
+
+    public class UpdateServiceDto
+    {
+        public int ServiceCategoryId { get; set; }
+        public string ServiceName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal? PricePerUnit { get; set; }
+        public string UnitOfMeasure { get; set; } = "Item";
+        public int ProcessingTimeHours { get; set; }
+        public bool IsExpressService { get; set; }
+        public decimal? ExpressMultiplier { get; set; }
+        public bool RequiresSpecialHandling { get; set; }
+        public string? HandlingInstructions { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int SortOrder { get; set; } = 0;
+    }
+
+    public class ServiceFilterDto
+    {
+        public string? SearchTerm { get; set; }
+        public int? ServiceCategoryId { get; set; }
+        public bool? IsActive { get; set; }
+        public bool? IsExpressService { get; set; }
+        public bool IncludeArchived { get; set; } = false;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // SERVICE ADD-ON
+    // ══════════════════════════════════════════════════════════
+    public class ServiceAddOnDto
+    {
+        public int ServiceAddOnId { get; set; }
+        public int ServiceId { get; set; }
+        public string AddOnName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal AdditionalPrice { get; set; }
+        public bool IsActive { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public class CreateServiceAddOnDto
+    {
+        public string AddOnName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal AdditionalPrice { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int SortOrder { get; set; } = 0;
+    }
+
+    public class UpdateServiceAddOnDto
+    {
+        public string AddOnName { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal AdditionalPrice { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int SortOrder { get; set; } = 0;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // SERVICE CATEGORY
+    // ══════════════════════════════════════════════════════════
+    public class ServiceCategoryDto
+    {
+        public int ServiceCategoryId { get; set; }
+        public string CategoryCode { get; set; } = "";
+        public string CategoryName { get; set; } = "";
+        public string? Description { get; set; }
+        public bool IsActive { get; set; }
+        public int SortOrder { get; set; }
+    }
+}

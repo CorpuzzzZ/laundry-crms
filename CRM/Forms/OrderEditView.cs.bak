@@ -1,0 +1,582 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+using CRM.WinForms.UI;
+using CRM.UI;
+
+namespace CRM.WinForms.Forms
+{
+    /// <summary>
+    /// Full-page order editor — replaces the modal OrderDetailsForm dialog.
+    /// Handles both create (orderId = 0) and edit modes.
+    /// </summary>
+    public class OrderEditView : UserControl
+    {
+        public event EventHandler? Saved;
+        public event EventHandler? Cancelled;
+
+        private readonly OrderApiService _orderService = new();
+        private readonly ServiceApiService _serviceApi = new(ApiClient.Instance);
+        private readonly int _orderId;
+
+        // Header
+        private Panel pnlHeader = null!;
+        private Label lblTitle = null!;
+        private Button btnBack = null!;
+        private Button btnSaveTop = null!;
+
+        // Basic info
+        private ComboBox cmbCustomer = null!;
+        private Label lblOrderDate = null!;
+        private TextBox txtNotes = null!;
+
+        // Items
+        private FlowLayoutPanel pnlItems = null!;
+        private Button btnAddItem = null!;
+
+        // Billing
+        private Label lblSubtotal = null!;
+        private Label lblChemical = null!;
+        private Label lblMachine = null!;
+        private Label lblTotal = null!;
+        private Button btnSaveBottom = null!;
+        private Button btnCancelBottom = null!;
+
+        private readonly List<OrderItemCard> _itemCards = new();
+
+        public OrderEditView(int orderId)
+        {
+            _orderId = orderId;
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private bool IsCreate => _orderId == 0;
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+            Padding = new Padding(0);
+
+            // ═══════════════════════════════════════════════════════
+            // HEADER
+            // ═══════════════════════════════════════════════════════
+            pnlHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 72,
+                BackColor = Colors.Surface,
+                Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Lg)
+            };
+            pnlHeader.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawLine(pen, 0, pnlHeader.Height - 1, pnlHeader.Width, pnlHeader.Height - 1);
+            };
+
+            btnBack = new Button
+            {
+                Text = "← Back to Orders",
+                Location = new Point(Spacing.Xl, 20),
+                Width = 160,
+                Height = 32,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextSecondary,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand
+            };
+            btnBack.FlatAppearance.BorderColor = Colors.Border;
+            btnBack.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            pnlHeader.Controls.Add(btnBack);
+
+            lblTitle = new Label
+            {
+                Text = IsCreate ? "New Order" : "Edit Order",
+                Font = Typography.H1,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(200, 22)
+            };
+            pnlHeader.Controls.Add(lblTitle);
+
+            btnSaveTop = new Button
+            {
+                Text = IsCreate ? "Create Order" : "Save Changes",
+                Width = 160,
+                Height = 40,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnSaveTop.FlatAppearance.BorderSize = 0;
+            btnSaveTop.Click += async (s, e) => await SaveAsync();
+            pnlHeader.Controls.Add(btnSaveTop);
+            pnlHeader.Resize += (s, e) => btnSaveTop.Location = new Point(pnlHeader.Width - 180, 16);
+
+            Controls.Add(pnlHeader);
+
+            // ═══════════════════════════════════════════════════════
+            // SCROLLABLE BODY
+            // ═══════════════════════════════════════════════════════
+            var pnlBody = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Colors.Background,
+                Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Lg)
+            };
+            Controls.Add(pnlBody);
+            pnlBody.BringToFront();
+
+            int contentWidth = 1100;
+            int y = Spacing.Lg;
+
+            // ── Customer / Date / Notes card ──
+            var cardInfo = new RoundedCard
+            {
+                Location = new Point(Spacing.Xl, y),
+                Width = contentWidth,
+                Height = 130,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            pnlBody.Controls.Add(cardInfo);
+
+            int cx = Spacing.Lg;
+            int twoCol = (contentWidth - Spacing.Xl * 2 - Spacing.Md) / 2;
+            int col2 = cx + twoCol + Spacing.Md;
+
+            cardInfo.Controls.Add(new Label
+            {
+                Text = "CUSTOMER & ORDER",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(cx, 16),
+                AutoSize = true
+            });
+
+            cardInfo.Controls.Add(new Label
+            {
+                Text = "Customer *",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, 48),
+                AutoSize = true
+            });
+            cmbCustomer = new ComboBox
+            {
+                Location = new Point(cx, 68),
+                Width = twoCol,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cardInfo.Controls.Add(cmbCustomer);
+
+            cardInfo.Controls.Add(new Label
+            {
+                Text = "Order Date",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(col2, 48),
+                AutoSize = true
+            });
+            lblOrderDate = new Label
+            {
+                Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+                Location = new Point(col2, 68),
+                Width = twoCol,
+                Height = 32,
+                Font = Typography.Body,
+                ForeColor = Colors.TextPrimary,
+                BackColor = Colors.Background,
+                BorderStyle = BorderStyle.FixedSingle,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(6, 0, 0, 0)
+            };
+            cardInfo.Controls.Add(lblOrderDate);
+
+            cardInfo.Controls.Add(new Label
+            {
+                Text = "Notes (optional)",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, 108),
+                AutoSize = true
+            });
+            txtNotes = new TextBox
+            {
+                Location = new Point(cx, 128),
+                Width = contentWidth - Spacing.Xl * 2 - 12,
+                Height = 32,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            cardInfo.Controls.Add(txtNotes);
+            cardInfo.Height = 180;
+
+            y += cardInfo.Height + Spacing.Xl;
+
+            // ── Items card ──
+            var cardItems = new RoundedCard
+            {
+                Location = new Point(Spacing.Xl, y),
+                Width = contentWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            pnlBody.Controls.Add(cardItems);
+
+            cardItems.Controls.Add(new Label
+            {
+                Text = "ITEMS",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(Spacing.Lg, 16),
+                AutoSize = true
+            });
+
+            pnlItems = new FlowLayoutPanel
+            {
+                Location = new Point(Spacing.Lg, 40),
+                Width = contentWidth - Spacing.Xl * 2 - 12,
+                Height = 420,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                BackColor = Colors.Background,
+                Padding = new Padding(0)
+            };
+            cardItems.Controls.Add(pnlItems);
+
+            btnAddItem = new Button
+            {
+                Text = "+ Add Item",
+                Location = new Point(Spacing.Lg, 472),
+                Width = 180,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Success,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnAddItem.FlatAppearance.BorderSize = 0;
+            btnAddItem.Click += async (s, e) => await AddItemAsync();
+            cardItems.Controls.Add(btnAddItem);
+
+            cardItems.Height = 530;
+            y += cardItems.Height + Spacing.Xl;
+
+            // ── Billing summary card ──
+            var cardBilling = new RoundedCard
+            {
+                Location = new Point(Spacing.Xl, y),
+                Width = contentWidth,
+                Height = 240,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            pnlBody.Controls.Add(cardBilling);
+
+            cardBilling.Controls.Add(new Label
+            {
+                Text = "BILLING SUMMARY",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(Spacing.Lg, 16),
+                AutoSize = true
+            });
+
+            int by = 60;
+            lblSubtotal = MakeBillRow(cardBilling, "Items Subtotal", by);
+            lblChemical = MakeBillRow(cardBilling, "Chemical Add-ons", by += 36);
+            lblMachine = MakeBillRow(cardBilling, "Machine Add-ons", by += 36);
+
+            // Total row
+            var lblTotalCaption = new Label
+            {
+                Text = "TOTAL",
+                Font = Typography.H3,
+                ForeColor = Colors.TextPrimary,
+                Location = new Point(Spacing.Lg, by + 44),
+                AutoSize = true
+            };
+            cardBilling.Controls.Add(lblTotalCaption);
+            lblTotal = new Label
+            {
+                Text = "PHP 0.00",
+                Font = Typography.H2,
+                ForeColor = Colors.Primary,
+                Location = new Point(contentWidth - Spacing.Xl - 350, by + 42),
+                Width = 330,
+                Height = 30,
+                TextAlign = ContentAlignment.MiddleRight
+            };
+            cardBilling.Controls.Add(lblTotal);
+
+            // Bottom buttons
+            btnCancelBottom = new Button
+            {
+                Text = "Cancel",
+                Location = new Point(contentWidth - Spacing.Xl - 320, by + 100),
+                Width = 140,
+                Height = 44,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnCancelBottom.FlatAppearance.BorderColor = Colors.Border;
+            btnCancelBottom.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            cardBilling.Controls.Add(btnCancelBottom);
+
+            btnSaveBottom = new Button
+            {
+                Text = IsCreate ? "Create Order" : "Save Changes",
+                Location = new Point(contentWidth - Spacing.Xl - 170, by + 100),
+                Width = 170,
+                Height = 44,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnSaveBottom.FlatAppearance.BorderSize = 0;
+            btnSaveBottom.Click += async (s, e) => await SaveAsync();
+            cardBilling.Controls.Add(btnSaveBottom);
+
+            y += cardBilling.Height + Spacing.Xl;
+
+            // ═══════════════════════════════════════════════════════
+            // Permission gating
+            // ═══════════════════════════════════════════════════════
+            var user = SessionManager.CurrentUser;
+            bool canModify = user?.CanModifyOrders == true;
+            btnSaveTop.Visible = canModify;
+            btnSaveBottom.Visible = canModify;
+
+            if (!canModify)
+            {
+                cmbCustomer.Enabled = false;
+                txtNotes.ReadOnly = true;
+                btnAddItem.Enabled = false;
+            }
+        }
+
+        private Label MakeBillRow(Control parent, string caption, int y)
+        {
+            var lblCaption = new Label
+            {
+                Text = caption,
+                Font = Typography.Body,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(Spacing.Lg, y),
+                AutoSize = true
+            };
+            parent.Controls.Add(lblCaption);
+
+            var lblValue = new Label
+            {
+                Text = "PHP 0.00",
+                Font = Typography.BodyBold,
+                ForeColor = Colors.TextPrimary,
+                Location = new Point(parent.Width - Spacing.Xl - 350, y),
+                Width = 330,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleRight
+            };
+            parent.Controls.Add(lblValue);
+            return lblValue;
+        }
+
+        private async Task LoadAsync()
+        {
+            // Load customers — placeholder for now, replace with CustomerApiService when wired
+            cmbCustomer.Items.Clear();
+            cmbCustomer.Items.Add(new ComboItem(1, "Walk-in Customer"));
+            cmbCustomer.SelectedIndex = 0;
+
+            // Load existing order (edit mode)
+            if (!IsCreate)
+            {
+                try
+                {
+                    var order = await _orderService.GetOrderByIdAsync(_orderId);
+                    if (order != null)
+                    {
+                        lblTitle.Text = $"Edit Order #{order.OrderNumber}";
+                        txtNotes.Text = order.Notes ?? "";
+                        lblOrderDate.Text = order.OrderDate.ToString("yyyy-MM-dd HH:mm");
+                        // TODO: load items when editing (once API supports it)
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to load order: {ex.Message}", "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+
+            // Add first item card
+            await AddItemAsync();
+            RecalculateBilling();
+        }
+
+        private async Task AddItemAsync()
+        {
+            var card = new OrderItemCard();
+            card.ItemChanged += (s, e) => RecalculateBilling();
+            card.RemoveRequested += (s, e) =>
+            {
+                if (_itemCards.Count <= 1)
+                {
+                    MessageBox.Show("At least one item is required.", "Cannot Remove",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                _itemCards.Remove(card);
+                pnlItems.Controls.Remove(card);
+                RelayoutItems();
+                RecalculateBilling();
+            };
+
+            _itemCards.Add(card);
+            pnlItems.Controls.Add(card);
+            RelayoutItems();
+
+            await card.InitializeDataAsync(_serviceApi);
+        }
+
+        private void RelayoutItems()
+        {
+            int y = 0;
+            for (int i = 0; i < _itemCards.Count; i++)
+            {
+                _itemCards[i].ItemNumber = i + 1;
+                _itemCards[i].Location = new Point(0, y);
+                y += _itemCards[i].Height + 10;
+            }
+        }
+
+        private void RecalculateBilling()
+        {
+            decimal sub = _itemCards.Sum(c => c.ServiceLineTotal);
+            decimal chem = _itemCards.Sum(c => c.ChemicalTotal);
+            decimal mach = _itemCards.Sum(c => c.MachineTotal);
+            decimal total = sub + chem + mach;
+
+            lblSubtotal.Text = $"PHP {sub:N2}";
+            lblChemical.Text = $"PHP {chem:N2}";
+            lblMachine.Text = $"PHP {mach:N2}";
+            lblTotal.Text = $"PHP {total:N2}";
+        }
+
+        private async Task SaveAsync()
+        {
+            if (cmbCustomer.SelectedItem == null)
+            {
+                MessageBox.Show("Please select a customer.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_itemCards.Count == 0)
+            {
+                MessageBox.Show("Please add at least one item.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var items = new List<CreateOrderItemRequest>();
+            foreach (var card in _itemCards)
+            {
+                if (!card.IsValid(out string err))
+                {
+                    MessageBox.Show(err, "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                items.Add(new CreateOrderItemRequest
+                {
+                    ServiceId = 1,   // TODO: read from card when card exposes ServiceId
+                    Quantity = 1,
+                    UnitPrice = card.ServiceLineTotal,
+                    DiscountAmount = 0
+                });
+            }
+
+            var orderDate = DateTime.UtcNow;
+            var request = new CreateOrderRequest
+            {
+                CustomerId = (cmbCustomer.SelectedItem as ComboItem)?.Value ?? 1,
+                BranchId = 1,
+                OrderType = "WalkIn",
+                Priority = "Normal",
+                Notes = txtNotes.Text,
+                PickupDate = orderDate,
+                DeliveryDate = orderDate.AddDays(2),
+                Items = items
+            };
+
+            SetSavingState(true);
+
+            try
+            {
+                if (IsCreate)
+                {
+                    var (success, order, error) = await _orderService.CreateOrderAsync(request);
+                    if (success)
+                    {
+                        MessageBox.Show($"Order {order?.OrderNumber} created successfully.",
+                            "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        Saved?.Invoke(this, EventArgs.Empty);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Failed: {error}", "Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                else
+                {
+                    // TODO: UpdateOrderAsync
+                    MessageBox.Show("Update not yet implemented.", "Info",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            finally
+            {
+                SetSavingState(false);
+            }
+        }
+
+        private void SetSavingState(bool saving)
+        {
+            btnSaveTop.Enabled = !saving;
+            btnSaveBottom.Enabled = !saving;
+            btnSaveTop.Text = saving ? "Saving..." : (IsCreate ? "Create Order" : "Save Changes");
+            btnSaveBottom.Text = btnSaveTop.Text;
+        }
+    }
+}

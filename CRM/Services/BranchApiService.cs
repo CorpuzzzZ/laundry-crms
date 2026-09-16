@@ -1,0 +1,79 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using CRM.UI;
+using CRM.WinForms.Config;
+using CRM.WinForms.Models;
+
+namespace CRM.WinForms.Services
+{
+    public class BranchApiService
+    {
+        private readonly ApiClient _api;
+
+        public BranchApiService(ApiClient api)
+        {
+            _api = api;
+        }
+
+        public async Task<List<BranchModel>> GetAllAsync(string? search = null, bool? isActive = null, bool includeArchived = false)
+        {
+            var url = AppConfig.ApiV1Url("branches");
+            var query = new List<string>();
+            if (!string.IsNullOrWhiteSpace(search)) query.Add($"searchTerm={System.Uri.EscapeDataString(search)}");
+            if (isActive.HasValue) query.Add($"isActive={isActive.Value.ToString().ToLower()}");
+            if (includeArchived) query.Add("includeArchived=true");
+            if (query.Count > 0) url += "?" + string.Join("&", query);
+
+            var response = await _api.GetDataAsync<BranchListResponse>(url);
+            return response?.Data ?? new List<BranchModel>();
+        }
+
+        public async Task<BranchModel?> GetByIdAsync(int branchId)
+        {
+            var response = await _api.GetDataAsync<BranchResponse>(
+                AppConfig.ApiV1Url($"branches/{branchId}"));
+            return response?.Data;
+        }
+
+        public async Task<BranchModel?> CreateAsync(CreateBranchRequest request)
+        {
+            var response = await _api.PostDataAsync<BranchResponse>(
+                AppConfig.ApiV1Url("branches"), request);
+            return response?.Data;
+        }
+
+        public async Task<BranchModel?> UpdateAsync(int branchId, UpdateBranchRequest request)
+        {
+            var response = await _api.PutDataAsync<BranchResponse>(
+                AppConfig.ApiV1Url($"branches/{branchId}"), request);
+            return response?.Data;
+        }
+
+        public async Task<BranchModel?> ToggleActiveAsync(int branchId)
+        {
+            var response = await _api.PostDataAsync<BranchResponse>(
+                AppConfig.ApiV1Url($"branches/{branchId}/toggle-active"), new { });
+            return response?.Data;
+        }
+
+        public async Task<bool> DeleteAsync(int branchId)
+        {
+            return await _api.DeleteDataAsync(
+                AppConfig.ApiV1Url($"branches/{branchId}"));
+        }
+
+        public async Task<BranchModel?> RestoreAsync(int branchId)
+        {
+            var response = await _api.PostDataAsync<BranchResponse>(
+                AppConfig.ApiV1Url($"branches/{branchId}/restore"), new { });
+            return response?.Data;
+        }
+
+        public async Task<BranchLimitInfoModel?> GetLimitInfoAsync()
+        {
+            var response = await _api.GetDataAsync<BranchLimitInfoResponse>(
+                AppConfig.ApiV1Url("branches/limit-info"));
+            return response?.Data;
+        }
+    }
+}

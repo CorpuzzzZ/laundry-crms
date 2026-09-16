@@ -1,0 +1,131 @@
+using System;
+using System.ComponentModel;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+
+namespace CRM.UI.Controls
+{
+    /// <summary>
+    /// A panel with rounded corners, optional border, optional drop shadow,
+    /// and a customizable left accent bar.
+    /// </summary>
+    public class RoundedCard : Panel
+    {
+        private bool _hover;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public int CornerRadius { get; set; } = 8;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public Color FillColor { get; set; } = Colors.Surface;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public Color BorderColor { get; set; } = Colors.Border;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public Color HoverBorderColor { get; set; } = Colors.Primary;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public Color AccentColor { get; set; } = Color.Transparent;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public int AccentWidth { get; set; } = 0;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public bool EnableHover { get; set; } = false;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public bool ShowShadow { get; set; } = true;
+
+        public RoundedCard()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.UserPaint |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.ResizeRedraw |
+                ControlStyles.SupportsTransparentBackColor,
+                true);
+
+            BackColor = Colors.Background;
+            Padding = new Padding(16);
+
+            MouseEnter += (s, e) => { if (EnableHover) { _hover = true; Invalidate(); } };
+            MouseLeave += (s, e) => { if (EnableHover) { _hover = false; Invalidate(); } };
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            // Deliberately empty — OnPaint fills with parent color
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color parentBg = Parent?.BackColor ?? Colors.Background;
+            g.Clear(parentBg);
+
+            var cardRect = new Rectangle(0, 0, Width - 1, Height - 1);
+
+            if (ShowShadow)
+            {
+                using var shadow = new SolidBrush(Color.FromArgb(_hover ? 22 : 12, 0, 0, 0));
+                using var shadowPath = GetRoundedPath(
+                    new Rectangle(cardRect.X + 1, cardRect.Y + 2, cardRect.Width, cardRect.Height),
+                    CornerRadius);
+                g.FillPath(shadow, shadowPath);
+            }
+
+            using (var path = GetRoundedPath(cardRect, CornerRadius))
+            {
+                using var bg = new SolidBrush(FillColor);
+                g.FillPath(bg, path);
+
+                var borderWidth = _hover ? 1.5f : 1f;
+                var border = _hover ? HoverBorderColor : BorderColor;
+                using var pen = new Pen(border, borderWidth);
+                g.DrawPath(pen, path);
+            }
+
+            if (AccentWidth > 0 && AccentColor != Color.Transparent)
+            {
+                using var clipPath = GetRoundedPath(cardRect, CornerRadius);
+                var oldClip = g.Clip;
+                g.SetClip(clipPath);
+                using (var accent = new SolidBrush(AccentColor))
+                    g.FillRectangle(accent, cardRect.X, cardRect.Y, AccentWidth, cardRect.Height);
+                g.Clip = oldClip;
+            }
+        }
+
+        private static GraphicsPath GetRoundedPath(Rectangle rect, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+
+            if (d <= 0 || d > rect.Width || d > rect.Height)
+            {
+                path.AddRectangle(rect);
+                return path;
+            }
+
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+}

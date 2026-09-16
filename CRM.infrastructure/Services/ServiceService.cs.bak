@@ -1,0 +1,365 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using CRM.Domain.DTOs.Services;
+using CRM.Domain.Entities.TenantDb;
+using CRM.infrastructure.Data.Context;
+
+namespace CRM.infrastructure.Services
+{
+    public class ServiceService : IServiceService
+    {
+        // ══════════════════════════════════════════════════════════
+        // GET ALL
+        // ══════════════════════════════════════════════════════════
+        public async Task<List<ServiceDto>> GetAllAsync(TenantErpDbContext db, ServiceFilterDto filter)
+        {
+            var query = db.Services
+                .Include(s => s.ServiceCategory)
+                .Include(s => s.AddOns)
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+            {
+                var term = filter.SearchTerm.Trim().ToLower();
+                query = query.Where(s =>
+                    s.ServiceCode.ToLower().Contains(term) ||
+                    s.ServiceName.ToLower().Contains(term) ||
+                    (s.Description != null && s.Description.ToLower().Contains(term)));
+            }
+
+            if (filter.ServiceType.HasValue)
+                query = query.Where(s => (int)s.ServiceType == filter.ServiceType.Value);
+
+            if (filter.ServiceCategoryId.HasValue)
+                query = query.Where(s => s.ServiceCategoryId == filter.ServiceCategoryId.Value);
+
+            if (filter.IsActive.HasValue)
+                query = query.Where(s => s.IsActive == filter.IsActive.Value);
+
+            if (filter.IsExpressService.HasValue)
+                query = query.Where(s => s.IsExpressService == filter.IsExpressService.Value);
+
+            // Hide archived by default
+            if (!filter.IncludeArchived)
+                query = query.Where(s => !s.IsArchived);
+
+            var rows = await query
+                .OrderBy(s => s.SortOrder)
+                .ThenBy(s => s.ServiceName)
+                .ToListAsync();
+
+            return rows.Select(Map).ToList();
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // GET BY ID
+        // ══════════════════════════════════════════════════════════
+        public async Task<ServiceDto?> GetByIdAsync(TenantErpDbContext db, int serviceId)
+        {
+            var service = await db.Services
+                .Include(s => s.ServiceCategory)
+                .Include(s => s.AddOns)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.ServiceId == serviceId);
+
+            return service == null ? null : Map(service);
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // AUTO-GEN CODE  (SVC-2026-0001, SVC-2026-0002, ...)
+        // ══════════════════════════════════════════════════════════
+        private static async Task<string> GenerateServiceCodeAsync(TenantErpDbContext db, ServiceType type = ServiceType.Base)
+        {
+            var year = DateTime.UtcNow.Year;
+            var prefix = type switch
+            {
+                ServiceType.ChemicalAddOn => $"CHM-{year}-",
+                ServiceType.MachineAddOn  => $"MCH-{year}-",
+                _                         => $"SVC-{year}-"
+            };
+
+            var lastCode = await db.Services
+                .Where(s => s.ServiceCode.StartsWith(prefix))
+                .OrderByDescending(s => s.ServiceId)
+                .Select(s => s.ServiceCode)
+                .FirstOrDefaultAsync();
+
+            int nextNumber = 1;
+            if (!string.IsNullOrEmpty(lastCode))
+            {
+                var parts = lastCode.Split('-');
+                if (parts.Length == 3 && int.TryParse(parts[2], out var last))
+                    nextNumber = last + 1;
+            }
+            return $"{prefix}{nextNumber:D4}";
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // CREATE
+        // ══════════════════════════════════════════════════════════
+        public async Task<ServiceDto> CreateAsync(TenantErpDbContext db, CreateServiceDto dto, string? currentUserId)
+        {
+            // Convert int → enum
+            var serviceType = (ServiceType)dto.ServiceType;
+
+            // Validate category only for Base services
+            if (serviceType == ServiceType.Base)
+            {
+                if (!dto.ServiceCategoryId.HasValue)
+                    throw new InvalidOperationException("Base services require a category.");
+
+                var categoryExists = await db.ServiceCategories
+                    .AnyAsync(c => c.ServiceCategoryId == dto.ServiceCategoryId.Value);
+                if (!categoryExists)
+                    throw new InvalidOperationException($"Category {dto.ServiceCategoryId} not found.");
+            }
+
+            var code = await GenerateServiceCodeAsync(db, serviceType);
+
+            var service = new Service
+            {
+                ServiceType = serviceType,
+                ServiceCategoryId = dto.ServiceCategoryId,
+                ServiceCode = code,
+                ServiceName = dto.ServiceName.Trim(),
+                Description = dto.Description?.Trim(),
+                BasePrice = dto.BasePrice,
+                PricePerUnit = dto.PricePerUnit,
+                UnitOfMeasure = string.IsNullOrWhiteSpace(dto.UnitOfMeasure) ? "Item" : dto.UnitOfMeasure.Trim(),
+                ProcessingTimeHours = dto.ProcessingTimeHours,
+                IsExpressService = dto.IsExpressService,
+                ExpressMultiplier = dto.ExpressMultiplier,
+                RequiresSpecialHandling = dto.RequiresSpecialHandling,
+                HandlingInstructions = dto.HandlingInstructions?.Trim(),
+                IsActive = dto.IsActive,
+                SortOrder = dto.SortOrder,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            db.Services.Add(service);
+            await db.SaveChangesAsync();
+
+            // Optional add-ons
+            if (dto.AddOns != null && dto.AddOns.Count > 0)
+            {
+                int i = 0;
+                foreach (var addOn in dto.AddOns)
+                {
+                    db.ServiceAddOns.Add(new ServiceAddOn
+                    {
+                        ServiceId = service.ServiceId,
+                        AddOnName = addOn.AddOnName.Trim(),
+                        Description = addOn.Description?.Trim(),
+                        AdditionalPrice = addOn.AdditionalPrice,
+                        IsActive = addOn.IsActive,
+                        SortOrder = addOn.SortOrder != 0 ? addOn.SortOrder : i++,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                await db.SaveChangesAsync();
+            }
+
+            // Reload with nav props
+            await db.Entry(service).Reference(s => s.ServiceCategory).LoadAsync();
+            await db.Entry(service).Collection(s => s.AddOns).LoadAsync();
+
+            return Map(service);
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // UPDATE
+        // ══════════════════════════════════════════════════════════
+        public async Task<ServiceDto?> UpdateAsync(TenantErpDbContext db, int serviceId, UpdateServiceDto dto, string? currentUserId)
+        {
+            var service = await db.Services
+                .Include(s => s.ServiceCategory)
+                .Include(s => s.AddOns)
+                .FirstOrDefaultAsync(s => s.ServiceId == serviceId);
+
+            if (service == null) return null;
+
+            service.ServiceType = (ServiceType)dto.ServiceType;
+            service.ServiceCategoryId = dto.ServiceCategoryId;
+            service.ServiceName = dto.ServiceName.Trim();
+            service.Description = dto.Description?.Trim();
+            service.BasePrice = dto.BasePrice;
+            service.PricePerUnit = dto.PricePerUnit;
+            service.UnitOfMeasure = string.IsNullOrWhiteSpace(dto.UnitOfMeasure) ? "Item" : dto.UnitOfMeasure.Trim();
+            service.ProcessingTimeHours = dto.ProcessingTimeHours;
+            service.IsExpressService = dto.IsExpressService;
+            service.ExpressMultiplier = dto.ExpressMultiplier;
+            service.RequiresSpecialHandling = dto.RequiresSpecialHandling;
+            service.HandlingInstructions = dto.HandlingInstructions?.Trim();
+            service.IsActive = dto.IsActive;
+            service.SortOrder = dto.SortOrder;
+            service.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+
+            await db.Entry(service).Reference(s => s.ServiceCategory).LoadAsync();
+            await db.Entry(service).Collection(s => s.AddOns).LoadAsync();
+
+            return Map(service);
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // ARCHIVE
+        // ══════════════════════════════════════════════════════════
+        public async Task<bool> DeleteAsync(TenantErpDbContext db, int serviceId, string? currentUserId)
+        {
+            var service = await db.Services.FirstOrDefaultAsync(s => s.ServiceId == serviceId);
+            if (service == null) return false;
+
+            service.IsArchived = true;
+            service.ArchivedAt = DateTime.UtcNow;
+            service.ArchivedBy = currentUserId;
+            service.IsActive = false;
+            service.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            return true;
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // RESTORE
+        // ══════════════════════════════════════════════════════════
+        public async Task<ServiceDto?> RestoreAsync(TenantErpDbContext db, int serviceId)
+        {
+            var service = await db.Services
+                .Include(s => s.ServiceCategory)
+                .Include(s => s.AddOns)
+                .FirstOrDefaultAsync(s => s.ServiceId == serviceId);
+
+            if (service == null) return null;
+
+            service.IsArchived = false;
+            service.ArchivedAt = null;
+            service.ArchivedBy = null;
+            service.IsActive = true;
+            service.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            return Map(service);
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // ADD-ONS
+        // ══════════════════════════════════════════════════════════
+        public async Task<ServiceAddOnDto?> AddAddOnAsync(TenantErpDbContext db, int serviceId, CreateServiceAddOnDto dto)
+        {
+            var serviceExists = await db.Services.AnyAsync(s => s.ServiceId == serviceId);
+            if (!serviceExists) return null;
+
+            var addOn = new ServiceAddOn
+            {
+                ServiceId = serviceId,
+                AddOnName = dto.AddOnName.Trim(),
+                Description = dto.Description?.Trim(),
+                AdditionalPrice = dto.AdditionalPrice,
+                IsActive = dto.IsActive,
+                SortOrder = dto.SortOrder,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.ServiceAddOns.Add(addOn);
+            await db.SaveChangesAsync();
+
+            return MapAddOn(addOn);
+        }
+
+        public async Task<ServiceAddOnDto?> UpdateAddOnAsync(TenantErpDbContext db, int serviceId, int addOnId, UpdateServiceAddOnDto dto)
+        {
+            var addOn = await db.ServiceAddOns
+                .FirstOrDefaultAsync(a => a.ServiceAddOnId == addOnId && a.ServiceId == serviceId);
+            if (addOn == null) return null;
+
+            addOn.AddOnName = dto.AddOnName.Trim();
+            addOn.Description = dto.Description?.Trim();
+            addOn.AdditionalPrice = dto.AdditionalPrice;
+            addOn.IsActive = dto.IsActive;
+            addOn.SortOrder = dto.SortOrder;
+            addOn.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            return MapAddOn(addOn);
+        }
+
+        public async Task<bool> DeleteAddOnAsync(TenantErpDbContext db, int serviceId, int addOnId)
+        {
+            var addOn = await db.ServiceAddOns
+                .FirstOrDefaultAsync(a => a.ServiceAddOnId == addOnId && a.ServiceId == serviceId);
+            if (addOn == null) return false;
+
+            db.ServiceAddOns.Remove(addOn);
+            await db.SaveChangesAsync();
+            return true;
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // CATEGORIES
+        // ══════════════════════════════════════════════════════════
+        public async Task<List<ServiceCategoryDto>> GetCategoriesAsync(TenantErpDbContext db)
+        {
+            var list = await db.ServiceCategories
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.CategoryName)
+                .AsNoTracking()
+                .ToListAsync();
+
+            return list.Select(c => new ServiceCategoryDto
+            {
+                ServiceCategoryId = c.ServiceCategoryId,
+                CategoryCode = c.CategoryCode,
+                CategoryName = c.CategoryName,
+                Description = c.Description,
+                IsActive = c.IsActive,
+                SortOrder = c.SortOrder
+            }).ToList();
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // MAPPERS
+        // ══════════════════════════════════════════════════════════
+        private static ServiceDto Map(Service s) => new()
+        {
+            ServiceId = s.ServiceId,
+            ServiceType = (int)s.ServiceType,
+            ServiceTypeName = s.ServiceType.ToString(),
+            ServiceCategoryId = s.ServiceCategoryId,
+            ServiceCategoryName = s.ServiceCategory?.CategoryName ?? "",
+            ServiceCode = s.ServiceCode,
+            ServiceName = s.ServiceName,
+            Description = s.Description,
+            BasePrice = s.BasePrice,
+            PricePerUnit = s.PricePerUnit,
+            UnitOfMeasure = s.UnitOfMeasure,
+            ProcessingTimeHours = s.ProcessingTimeHours,
+            IsExpressService = s.IsExpressService,
+            ExpressMultiplier = s.ExpressMultiplier,
+            RequiresSpecialHandling = s.RequiresSpecialHandling,
+            HandlingInstructions = s.HandlingInstructions,
+            IsActive = s.IsActive,
+            SortOrder = s.SortOrder,
+            CreatedAt = s.CreatedAt,
+            UpdatedAt = s.UpdatedAt,
+            IsArchived = s.IsArchived,
+            ArchivedAt = s.ArchivedAt,
+            AddOns = s.AddOns?.OrderBy(a => a.SortOrder).Select(MapAddOn).ToList() ?? new()
+        };
+
+        private static ServiceAddOnDto MapAddOn(ServiceAddOn a) => new()
+        {
+            ServiceAddOnId = a.ServiceAddOnId,
+            ServiceId = a.ServiceId,
+            AddOnName = a.AddOnName,
+            Description = a.Description,
+            AdditionalPrice = a.AdditionalPrice,
+            IsActive = a.IsActive,
+            SortOrder = a.SortOrder
+        };
+    }
+}

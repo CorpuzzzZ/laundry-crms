@@ -1,0 +1,380 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+using CRM.WinForms.UI;
+
+namespace CRM.WinForms.Forms
+{
+    public class OrderDetailsForm : Form
+    {
+        private readonly OrderApiService _orderService = new();
+        private readonly ServiceApiService _serviceApi = new(ApiClient.Instance);
+        private readonly int _orderId;
+
+        private Panel pnlScrollRoot = null!;
+        private Panel pnlScrollContent = null!;
+        private Panel pnlItemsContainer = null!;
+        private ComboBox cmbCustomer = null!;
+        private Label lblOrderDate = null!;
+        private TextBox txtNotes = null!;
+        private Label lblBillItemsSubtotal = null!;
+        private Label lblBillChemical = null!;
+        private Label lblBillMachine = null!;
+        private Label lblBillTotal = null!;
+        private Button btnAddItem = null!;
+        private Button btnSave = null!;
+        private Button btnCancel = null!;
+
+        private readonly List<OrderItemCard> _itemCards = new();
+
+        public OrderDetailsForm(int orderId)
+        {
+            _orderId = orderId;
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Text = _orderId == 0 ? "New Order" : $"Order #{_orderId}";
+            Size = new Size(1300, 850);
+            StartPosition = FormStartPosition.CenterParent;
+            BackColor = Theme.BackgroundColor;
+            Font = Theme.BodyFont;
+
+            // Scroll root
+            pnlScrollRoot = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.BackgroundColor };
+            pnlScrollContent = new Panel { Location = new Point(0, 0), Size = new Size(1280, 800), BackColor = Theme.BackgroundColor };
+            pnlScrollRoot.Controls.Add(pnlScrollContent);
+
+            // Header
+            var pnlHeader = new Panel { Location = new Point(0, 0), Size = new Size(1260, 100), BackColor = Color.White };
+            pnlHeader.Controls.Add(MakeLabel("Customer *", 20, 10));
+            cmbCustomer = new ComboBox { Location = new Point(20, 32), Width = 350, Font = Theme.BodyFont, DropDownStyle = ComboBoxStyle.DropDownList };
+            pnlHeader.Controls.Add(cmbCustomer);
+
+            pnlHeader.Controls.Add(MakeLabel("Order Date (Auto)", 400, 10));
+            lblOrderDate = new Label
+            {
+                Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+                Location = new Point(400, 34),
+                Width = 220,
+                Height = 26,
+                Font = new Font("Segoe UI", 11F),
+                ForeColor = Theme.TextDarkColor,
+                BackColor = Color.FromArgb(245, 245, 245),
+                BorderStyle = BorderStyle.FixedSingle,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(5, 0, 0, 0)
+            };
+            pnlHeader.Controls.Add(lblOrderDate);
+
+            pnlHeader.Controls.Add(MakeLabel("Notes (optional)", 640, 10));
+            txtNotes = new TextBox
+            {
+                Location = new Point(640, 32),
+                Width = 400,
+                Height = 26,
+                Font = Theme.BodyFont,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            pnlHeader.Controls.Add(txtNotes);
+            pnlScrollContent.Controls.Add(pnlHeader);
+
+            // Items container
+            pnlItemsContainer = new Panel
+            {
+                Location = new Point(0, 110),
+                Size = new Size(1260, 400),
+                BackColor = Theme.BackgroundColor
+            };
+            pnlScrollContent.Controls.Add(pnlItemsContainer);
+
+            // Add Item button
+            btnAddItem = new Button
+            {
+                Text = "+ Add Item",
+                Location = new Point(20, 520),
+                Width = 200,
+                Height = 45,
+                Font = new Font("Segoe UI", 11F, FontStyle.Bold)
+            };
+            Theme.StyleSuccessButton(btnAddItem);
+            btnAddItem.Click += async (s, e) => await AddNewItemCardAsync();
+            pnlScrollContent.Controls.Add(btnAddItem);
+
+            // Billing
+            var pnlBilling = new Panel
+            {
+                Location = new Point(0, 590),
+                Size = new Size(1260, 260),
+                BackColor = Color.White
+            };
+            pnlBilling.Controls.Add(new Label
+            {
+                Text = "BILLING SUMMARY",
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                ForeColor = Theme.PrimaryColor,
+                Location = new Point(850, 15),
+                AutoSize = true
+            });
+
+            lblBillItemsSubtotal = MakeBillingLabel("Items Subtotal:", 55);
+            pnlBilling.Controls.Add(lblBillItemsSubtotal);
+            lblBillChemical = MakeBillingLabel("Chemical Add-ons:", 83);
+            pnlBilling.Controls.Add(lblBillChemical);
+            lblBillMachine = MakeBillingLabel("Machine Add-ons:", 111);
+            pnlBilling.Controls.Add(lblBillMachine);
+            lblBillTotal = MakeBillingLabel("TOTAL:", 160, true);
+            pnlBilling.Controls.Add(lblBillTotal);
+
+            btnSave = new Button { Text = "Save Order", Location = new Point(920, 190), Width = 140, Height = 42 };
+            Theme.StyleSuccessButton(btnSave);
+            btnSave.Click += async (s, e) => await SaveAsync();
+            pnlBilling.Controls.Add(btnSave);
+
+            // Gate Save button: only Manager and Crew can modify orders
+            var _user = SessionManager.CurrentUser;
+            bool _canModify = _user?.CanModifyOrders == true;
+            btnSave.Visible = _canModify;
+
+            // Make form read-only for view-only users (Admin)
+            if (!_canModify)
+            {
+                foreach (Control c in Controls)
+                    ApplyReadOnly(c);
+            }
+
+            btnCancel = new Button { Text = "Cancel", Location = new Point(1070, 190), Width = 100, Height = 42 };
+            Theme.StyleSecondaryButton(btnCancel);
+            btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+            pnlBilling.Controls.Add(btnCancel);
+
+            pnlScrollContent.Controls.Add(pnlBilling);
+            Controls.Add(pnlScrollRoot);
+
+            Resize += (s, e) => AdjustWidth();
+            AdjustWidth();
+        }
+
+        private void AdjustWidth()
+        {
+            if (pnlScrollRoot == null || pnlScrollContent == null) return;
+            int w = Math.Max(1260, pnlScrollRoot.ClientSize.Width - 20);
+            pnlScrollContent.Width = w;
+            if (pnlItemsContainer != null) pnlItemsContainer.Width = w;
+        }
+
+        private Label MakeLabel(string text, int x, int y) => new Label
+        {
+            Text = text, Font = Theme.SmallFont, ForeColor = Theme.TextLightColor,
+            Location = new Point(x, y), AutoSize = true
+        };
+
+        private Label MakeBillingLabel(string caption, int y, bool bold = false) => new Label
+        {
+            Text = $"{caption,-25} {"P 0.00",12}",
+            Font = bold ? new Font("Segoe UI", 13F, FontStyle.Bold) : Theme.BodyFont,
+            ForeColor = bold ? Theme.PrimaryColor : Theme.TextDarkColor,
+            Location = new Point(850, y),
+            Width = 380,
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoSize = false,
+            Height = 24
+        };
+
+        private async Task LoadAsync()
+        {
+            cmbCustomer.Items.Clear();
+            cmbCustomer.Items.Add(new ComboItem(1, "Walk-in Customer"));
+            cmbCustomer.Items.Add(new ComboItem(2, "John Doe (+639171234567)"));
+            cmbCustomer.Items.Add(new ComboItem(3, "Jane Smith (+639181234567)"));
+            cmbCustomer.SelectedIndex = 0;
+
+            if (_orderId > 0)
+            {
+                var order = await _orderService.GetOrderByIdAsync(_orderId);
+                if (order != null)
+                {
+                    txtNotes.Text = order.Notes;
+                    Text = $"Order #{order.OrderNumber}";
+                    lblOrderDate.Text = order.OrderDate.ToString("yyyy-MM-dd HH:mm");
+                }
+            }
+
+            await AddNewItemCardAsync();
+            RecalculateBilling();
+        }
+
+        private void AddNewItemCard()
+        {
+            var card = new OrderItemCard();
+            card.ItemChanged += (s, e) => RecalculateBilling();
+            card.RemoveRequested += (s, e) =>
+            {
+                if (_itemCards.Count <= 1)
+                {
+                    MessageBox.Show("At least one item is required.", "Cannot Remove",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                _itemCards.Remove(card);
+                pnlItemsContainer.Controls.Remove(card);
+                RelayoutCards();
+                RecalculateBilling();
+            };
+
+            _itemCards.Add(card);
+            pnlItemsContainer.Controls.Add(card);
+            RelayoutCards();
+        }
+
+        private void RelayoutCards()
+        {
+            int y = 0;
+            for (int i = 0; i < _itemCards.Count; i++)
+            {
+                _itemCards[i].ItemNumber = i + 1;
+                _itemCards[i].Location = new Point(0, y);
+                y += _itemCards[i].Height + 10;
+            }
+
+            pnlItemsContainer.Height = Math.Max(400, y + 10);
+            if (btnAddItem != null)
+                btnAddItem.Location = new Point(20, pnlItemsContainer.Bottom + 10);
+            if (pnlScrollContent != null && btnAddItem != null)
+                pnlScrollContent.Height = btnAddItem.Bottom + 20 + 260 + 40;
+        }
+
+        private void RecalculateBilling()
+        {
+            decimal itemsSub = _itemCards.Sum(c => c.ServiceLineTotal);
+            decimal chem = _itemCards.Sum(c => c.ChemicalTotal);
+            decimal mach = _itemCards.Sum(c => c.MachineTotal);
+            decimal grand = itemsSub + chem + mach;
+
+            lblBillItemsSubtotal.Text = $"{"Items Subtotal:",-25} {"P " + itemsSub.ToString("N2"),12}";
+            lblBillChemical.Text = $"{"Chemical Add-ons:",-25} {"P " + chem.ToString("N2"),12}";
+            lblBillMachine.Text = $"{"Machine Add-ons:",-25} {"P " + mach.ToString("N2"),12}";
+            lblBillTotal.Text = $"{"TOTAL:",-25} {"P " + grand.ToString("N2"),12}";
+        }
+
+        private static void ApplyReadOnly(Control parent)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c is TextBox txt)
+                {
+                    txt.ReadOnly = true;
+                    txt.BackColor = Color.FromArgb(0xF5, 0xF7, 0xFA);
+                }
+                else if (c is ComboBox cmb)
+                {
+                    cmb.Enabled = false;
+                }
+                else if (c is DateTimePicker dtp)
+                {
+                    dtp.Enabled = false;
+                }
+                else if (c is NumericUpDown num)
+                {
+                    num.Enabled = false;
+                }
+                else if (c is Button btn && btn != null)
+                {
+                    // Keep Cancel button enabled — user needs to close the form
+                    if (btn.Text != "Cancel" && btn.Text != "Close")
+                        btn.Enabled = false;
+                }
+                else if (c is CheckBox chk)
+                {
+                    chk.Enabled = false;
+                }
+
+                // Recurse into child containers
+                if (c.HasChildren)
+                    ApplyReadOnly(c);
+            }
+        }
+
+        private async Task SaveAsync()
+        {
+            if (cmbCustomer.SelectedItem == null)
+            {
+                MessageBox.Show("Please select a customer.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_itemCards.Count == 0)
+            {
+                MessageBox.Show("Please add at least one item.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var items = new List<CreateOrderItemRequest>();
+            foreach (var card in _itemCards)
+            {
+                if (!card.IsValid(out string err))
+                {
+                    MessageBox.Show(err, "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var service = card.ServiceLineTotal;
+                var weight = 1m; // We'll let the API calculate; keep simple
+                items.Add(new CreateOrderItemRequest
+                {
+                    ServiceId = 1,
+                    Quantity = weight,
+                    UnitPrice = service,
+                    DiscountAmount = 0
+                });
+            }
+
+            var orderDate = DateTime.UtcNow;
+            var request = new CreateOrderRequest
+            {
+                CustomerId = (cmbCustomer.SelectedItem as ComboItem)?.Value ?? 1,
+                BranchId = 1,
+                OrderType = "WalkIn",
+                Priority = "Normal",
+                Notes = txtNotes.Text,
+                PickupDate = orderDate,
+                DeliveryDate = orderDate.AddDays(2),
+                Items = items
+            };
+
+            btnSave.Enabled = false;
+            btnSave.Text = "Saving...";
+
+            try
+            {
+                var (success, order, error) = await _orderService.CreateOrderAsync(request);
+                if (success)
+                {
+                    MessageBox.Show($"Order {order?.OrderNumber} created successfully.",
+                        "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    DialogResult = DialogResult.OK;
+                    Close();
+                }
+                else
+                {
+                    MessageBox.Show($"Failed: {error}", "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            finally
+            {
+                btnSave.Enabled = true;
+                btnSave.Text = "Save Order";
+            }
+        }
+    }
+}

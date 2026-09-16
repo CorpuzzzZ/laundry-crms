@@ -1,0 +1,524 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.UI.Controls
+{
+    /// <summary>
+    /// Create/edit form for a user — card-based layout.
+    /// Password field only shown on create.
+    /// Branch assignment via multi-select list.
+    /// </summary>
+    public class UserEditPanel : UserControl
+    {
+        public event EventHandler? Saved;
+        public event EventHandler? Cancelled;
+
+        private readonly UserApiService _userService = new(ApiClient.Instance);
+        private readonly BranchApiService _branchService = new(ApiClient.Instance);
+        private readonly string _userId;
+        private UserModel? _existing;
+
+        private Label lblTitle = null!;
+        private Label lblStatus = null!;
+
+        private TextBox txtFirstName = null!;
+        private TextBox txtLastName = null!;
+        private TextBox txtEmail = null!;
+        private TextBox txtPhone = null!;
+
+        private ComboBox cmbRole = null!;
+        private TextBox txtPassword = null!;
+        private TextBox txtConfirmPassword = null!;
+        private CheckBox chkIsActive = null!;
+
+        private ListBox lstBranches = null!;
+        private List<int> _selectedBranchIds = new();
+
+        private Button btnSave = null!;
+        private Button btnCancel = null!;
+
+        public UserEditPanel(string userId)
+        {
+            _userId = userId ?? "";
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private bool IsCreate => string.IsNullOrEmpty(_userId);
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+            AutoScroll = true;
+            Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Xl);
+
+            int cardWidth = 900;
+            int contentLeft = Spacing.Lg;
+            int twoColWidth = (cardWidth - Spacing.Xl * 2 - Spacing.Md) / 2;
+            int col2Left = contentLeft + twoColWidth + Spacing.Md;
+            int y = 0;
+
+            // ── HEADER ─────────────────────────────────────────
+            lblTitle = new Label
+            {
+                Text = IsCreate ? "New User" : "Edit User",
+                Font = Typography.H1,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(0, y)
+            };
+            Controls.Add(lblTitle);
+            y += lblTitle.Height + Spacing.Md;
+
+            // ── BASIC INFORMATION ──────────────────────────────
+            var cardBasic = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(cardBasic);
+
+            int cy = Spacing.Xl;
+            AddSectionTitle(cardBasic, "BASIC INFORMATION", contentLeft, cy);
+            cy += 32;
+
+            AddFieldLabel(cardBasic, "First Name", contentLeft, cy);
+            txtFirstName = AddTextBox(cardBasic, contentLeft, cy + 22, twoColWidth);
+
+            AddFieldLabel(cardBasic, "Last Name", col2Left, cy);
+            txtLastName = AddTextBox(cardBasic, col2Left, cy + 22, twoColWidth);
+            cy += 62;
+
+            AddFieldLabel(cardBasic, "Email", contentLeft, cy);
+            txtEmail = AddTextBox(cardBasic, contentLeft, cy + 22, twoColWidth);
+
+            AddFieldLabel(cardBasic, "Phone", col2Left, cy);
+            txtPhone = AddTextBox(cardBasic, col2Left, cy + 22, twoColWidth);
+            cy += 62;
+
+            cardBasic.Height = cy + Spacing.Lg;
+            y += cardBasic.Height + Spacing.Xl;
+
+            // ── ROLE & ACCESS ──────────────────────────────────
+            var cardRole = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(cardRole);
+
+            cy = Spacing.Xl;
+            AddSectionTitle(cardRole, "ROLE & ACCESS", contentLeft, cy);
+            cy += 32;
+
+            AddFieldLabel(cardRole, "Role", contentLeft, cy);
+            cmbRole = new ComboBox
+            {
+                Location = new Point(contentLeft, cy + 22),
+                Width = twoColWidth,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cardRole.Controls.Add(cmbRole);
+            cy += 62;
+
+            if (IsCreate)
+            {
+                AddFieldLabel(cardRole, "Password", contentLeft, cy);
+                txtPassword = AddTextBox(cardRole, contentLeft, cy + 22, twoColWidth);
+                txtPassword.UseSystemPasswordChar = true;
+
+                AddFieldLabel(cardRole, "Confirm Password", col2Left, cy);
+                txtConfirmPassword = AddTextBox(cardRole, col2Left, cy + 22, twoColWidth);
+                txtConfirmPassword.UseSystemPasswordChar = true;
+                cy += 62;
+            }
+            else
+            {
+                // Email is locked on edit
+                txtEmail.ReadOnly = true;
+                txtEmail.BackColor = Colors.Background;
+
+                chkIsActive = new CheckBox
+                {
+                    Text = "User is active",
+                    Font = Typography.Body,
+                    ForeColor = Colors.TextBody,
+                    Checked = true,
+                    AutoSize = true,
+                    Location = new Point(contentLeft, cy)
+                };
+                cardRole.Controls.Add(chkIsActive);
+                cy += 32;
+            }
+
+            cardRole.Height = cy + Spacing.Lg;
+            y += cardRole.Height + Spacing.Xl;
+
+            // ── BRANCH ASSIGNMENT ──────────────────────────────
+            var cardBranch = new RoundedCard
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true
+            };
+            Controls.Add(cardBranch);
+
+            cy = Spacing.Xl;
+            AddSectionTitle(cardBranch, "BRANCH ASSIGNMENT", contentLeft, cy);
+            cy += 32;
+
+            cardBranch.Controls.Add(new Label
+            {
+                Text = "Ctrl+Click to select multiple branches.",
+                Font = Typography.Small,
+                ForeColor = Colors.TextMuted,
+                AutoSize = true,
+                Location = new Point(contentLeft, cy)
+            });
+            cy += 24;
+
+            lstBranches = new ListBox
+            {
+                Location = new Point(contentLeft, cy),
+                Width = cardWidth - Spacing.Xl * 2 - 12,
+                Height = 140,
+                Font = Typography.Body,
+                SelectionMode = SelectionMode.MultiExtended,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Colors.Surface
+            };
+            cardBranch.Controls.Add(lstBranches);
+            cy += 150;
+
+            cardBranch.Height = cy + Spacing.Lg;
+            y += cardBranch.Height + Spacing.Xl;
+
+            // ── STATUS ─────────────────────────────────────────
+            lblStatus = new Label
+            {
+                Location = new Point(0, y),
+                Width = cardWidth,
+                Height = 24,
+                Font = Typography.Small,
+                ForeColor = Colors.Danger,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            Controls.Add(lblStatus);
+            y += 32;
+
+            // ── BUTTONS ────────────────────────────────────────
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                Location = new Point(cardWidth - 260, y),
+                Width = 120,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnCancel.FlatAppearance.BorderColor = Colors.Border;
+            btnCancel.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            Controls.Add(btnCancel);
+
+            btnSave = new Button
+            {
+                Text = IsCreate ? "Create User" : "Save Changes",
+                Location = new Point(cardWidth - 130, y),
+                Width = 130,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Click += async (s, e) => await SaveAsync();
+            Controls.Add(btnSave);
+        }
+
+        private static void AddSectionTitle(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(x, y),
+                AutoSize = true
+            });
+        }
+
+        private static void AddFieldLabel(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(x, y),
+                AutoSize = true
+            });
+        }
+
+        private static TextBox AddTextBox(Control parent, int x, int y, int width)
+        {
+            var txt = new TextBox
+            {
+                Location = new Point(x, y),
+                Width = width,
+                Height = 32,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Colors.Surface
+            };
+            parent.Controls.Add(txt);
+            return txt;
+        }
+
+        private async Task LoadAsync()
+        {
+            try
+            {
+                var rolesTask = _userService.GetAssignableRolesAsync();
+                var branchesTask = _branchService.GetAllAsync(null, true);
+                await Task.WhenAll(rolesTask, branchesTask);
+
+                var roles = await rolesTask;
+                var branches = await branchesTask;
+
+                cmbRole.Items.Clear();
+                foreach (var r in roles)
+                    cmbRole.Items.Add(r.Name);
+
+                // Defensive fallback — never leave the dropdown empty
+                if (cmbRole.Items.Count == 0)
+                {
+                    cmbRole.Items.Add("Manager");
+                    cmbRole.Items.Add("Crew");
+                }
+
+                if (cmbRole.Items.Count > 0)
+                    cmbRole.SelectedItem = cmbRole.Items.Contains("Crew") ? "Crew" : cmbRole.Items[0];
+
+                lstBranches.Items.Clear();
+                foreach (var b in branches)
+                    lstBranches.Items.Add(new BranchItem(b.BranchId, b.BranchName));
+
+                if (IsCreate) return;
+
+                var user = await _userService.GetByIdAsync(_userId);
+                if (user == null)
+                {
+                    MessageBox.Show("User not found.", "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Cancelled?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                _existing = user;
+                txtFirstName.Text = user.FirstName;
+                txtLastName.Text = user.LastName;
+                txtEmail.Text = user.Email;
+                txtPhone.Text = user.PhoneNumber ?? "";
+                if (!string.IsNullOrEmpty(user.Role))
+                    cmbRole.SelectedItem = user.Role;
+                if (chkIsActive != null) chkIsActive.Checked = user.IsActive;
+
+                _selectedBranchIds = user.BranchIds ?? new List<int>();
+                for (int i = 0; i < lstBranches.Items.Count; i++)
+                {
+                    if (lstBranches.Items[i] is BranchItem item && _selectedBranchIds.Contains(item.Id))
+                        lstBranches.SetSelected(i, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Load error: " + ex.Message, Colors.Danger);
+            }
+        }
+
+        private async Task SaveAsync()
+        {
+            // Validation
+            if (string.IsNullOrWhiteSpace(txtFirstName.Text))
+            { SetStatus("First Name is required.", Colors.Danger); txtFirstName.Focus(); return; }
+            if (string.IsNullOrWhiteSpace(txtLastName.Text))
+            { SetStatus("Last Name is required.", Colors.Danger); txtLastName.Focus(); return; }
+            if (IsCreate && string.IsNullOrWhiteSpace(txtEmail.Text))
+            { SetStatus("Email is required.", Colors.Danger); txtEmail.Focus(); return; }
+            if (cmbRole.SelectedItem == null)
+            { SetStatus("Role is required.", Colors.Danger); cmbRole.Focus(); return; }
+
+            if (IsCreate)
+            {
+                if (string.IsNullOrWhiteSpace(txtPassword.Text))
+                { SetStatus("Password is required.", Colors.Danger); txtPassword.Focus(); return; }
+                if (txtPassword.Text.Length < 6)
+                { SetStatus("Password must be at least 6 characters.", Colors.Danger); txtPassword.Focus(); return; }
+                if (txtPassword.Text != txtConfirmPassword.Text)
+                { SetStatus("Passwords do not match.", Colors.Danger); txtConfirmPassword.Focus(); return; }
+            }
+
+            btnSave.Enabled = false;
+            btnSave.Text = "Saving...";
+            SetStatus("", Colors.TextPrimary);
+
+            var branchIds = new List<int>();
+            var branchNames = new List<string>();
+            foreach (var obj in lstBranches.SelectedItems)
+            {
+                if (obj is BranchItem bi)
+                {
+                    branchIds.Add(bi.Id);
+                    branchNames.Add(bi.Name);
+                }
+            }
+
+            // ── Edit mode: show diff confirmation before saving ──
+            if (!IsCreate && _existing != null)
+            {
+                var updated = new UserModel
+                {
+                    Id = _existing.Id,
+                    FirstName = txtFirstName.Text.Trim(),
+                    LastName = txtLastName.Text.Trim(),
+                    Email = _existing.Email,   // email is read-only on edit
+                    PhoneNumber = NullIfEmpty(txtPhone.Text),
+                    CompanyId = _existing.CompanyId,
+                    Role = cmbRole.SelectedItem?.ToString() ?? _existing.Role,
+                    IsActive = chkIsActive?.Checked ?? _existing.IsActive,
+                    BranchIds = branchIds,
+                    BranchNames = branchNames
+                };
+
+                using var confirmDlg = new UserEditConfirmationDialog(_existing, updated);
+                if (confirmDlg.ShowDialog(this) != DialogResult.OK)
+                    return;  // user cancelled — abort save
+            }
+
+            btnSave.Enabled = false;
+            btnSave.Text = "Saving...";
+            SetStatus("", Colors.TextPrimary);
+
+            try
+            {
+                if (IsCreate)
+                {
+                    var request = new CreateUserRequest
+                    {
+                        FirstName = txtFirstName.Text.Trim(),
+                        LastName = txtLastName.Text.Trim(),
+                        Email = txtEmail.Text.Trim(),
+                        PhoneNumber = NullIfEmpty(txtPhone.Text),
+                        Password = txtPassword.Text,
+                        Role = cmbRole.SelectedItem?.ToString() ?? "Crew",
+                        BranchIds = branchIds
+                    };
+
+                    var result = await _userService.CreateAsync(request);
+                    if (result == null)
+                    {
+                        SetStatus("Failed to create user. Check server logs.", Colors.Danger);
+                        return;
+                    }
+
+                    MessageBox.Show(
+                        "User created successfully.\n\nEmail: " + result.Email + "\nRole: " + result.Role,
+                        "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Saved?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    var request = new UpdateUserRequest
+                    {
+                        FirstName = txtFirstName.Text.Trim(),
+                        LastName = txtLastName.Text.Trim(),
+                        PhoneNumber = NullIfEmpty(txtPhone.Text),
+                        Role = cmbRole.SelectedItem?.ToString() ?? "Crew",
+                        IsActive = chkIsActive?.Checked ?? true
+                    };
+
+                    var result = await _userService.UpdateAsync(_userId, request);
+                    if (result == null)
+                    {
+                        SetStatus("Failed to update user.", Colors.Danger);
+                        return;
+                    }
+
+                    // Persist branch assignments (separate call)
+                    await _userService.SetBranchesAsync(_userId, new SetUserBranchesRequest
+                    {
+                        BranchIds = branchIds,
+                        PrimaryBranchId = branchIds.FirstOrDefault()
+                    });
+
+                    MessageBox.Show("User updated successfully.",
+                        "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Saved?.Invoke(this, EventArgs.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Error: " + ex.Message, Colors.Danger);
+            }
+            finally
+            {
+                btnSave.Enabled = true;
+                btnSave.Text = IsCreate ? "Create User" : "Save Changes";
+            }
+        }
+
+        private void SetStatus(string text, Color color)
+        {
+            lblStatus.Text = text;
+            lblStatus.ForeColor = color;
+        }
+
+        private static string? NullIfEmpty(string? value)
+            => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    /// <summary>
+    /// ListBox item wrapper for branch selection.
+    /// </summary>
+    public class BranchItem
+    {
+        public int Id { get; }
+        public string Name { get; }
+
+        public BranchItem(int id, string name)
+        {
+            Id = id;
+            Name = name;
+        }
+
+        public override string ToString() => Name;
+    }
+}

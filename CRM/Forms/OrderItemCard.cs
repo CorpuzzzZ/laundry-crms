@@ -1,0 +1,609 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.UI;
+
+namespace CRM.WinForms.Forms
+{
+    /// <summary>
+    /// Laundry item editor card.
+    /// Docked 4-row layout: header, top fields, add-ons, line total.
+    /// </summary>
+    public class OrderItemCard : Panel
+    {
+        public event EventHandler? ItemChanged;
+        public event EventHandler? RemoveRequested;
+
+        private readonly ComboBox cmbCategory = new();
+        private readonly ComboBox cmbService = new();
+        private readonly NumericUpDown numWeight = new();
+        private readonly Label lblDetergent = new();
+        private readonly Label lblLoad = new();
+        private readonly Panel pnlChemical = new();
+        private readonly Panel pnlMachine = new();
+        private readonly Label lblChemicalTotal = new();
+        private readonly Label lblMachineTotal = new();
+        private readonly Label lblLineTotal = new();
+        private readonly Label lblHeader = new();
+        private readonly Button btnRemove = new();
+
+        private readonly Dictionary<int, int> _chemQty = new();
+        private readonly Dictionary<int, int> _machQty = new();
+
+        private List<ServiceModel> _services = new();
+        private List<ServiceModel> _chemicals = new();
+        private List<ServiceModel> _machines = new();
+        private bool _dataLoaded = false;
+
+        public decimal ServiceLineTotal { get; private set; }
+        public decimal ChemicalTotal { get; private set; }
+        public decimal MachineTotal { get; private set; }
+        public decimal LineTotal { get; private set; }
+
+        private int _itemNumber = 1;
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        [Browsable(false)]
+        public int ItemNumber
+        {
+            get => _itemNumber;
+            set
+            {
+                _itemNumber = value;
+                if (lblHeader != null)
+                    lblHeader.Text = $"Item #{_itemNumber}";
+            }
+        }
+
+        private static readonly (int Id, string Name)[] Categories =
+        {
+            (1, "Clothes"),
+            (2, "Beddings")
+        };
+
+        public OrderItemCard()
+        {
+            InitializeCard();
+        }
+
+        private void InitializeCard()
+        {
+            Height = 460;
+            BackColor = Color.White;
+            BorderStyle = BorderStyle.FixedSingle;
+            Padding = new Padding(12);
+
+            // ═══════════════════════════════════════════════════════
+            // HEADER (Docked Top) — Item #N + Remove
+            // ═══════════════════════════════════════════════════════
+            var pnlHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.Transparent
+            };
+            Controls.Add(pnlHeader);
+
+            lblHeader.Text = $"Item #{ItemNumber}";
+            lblHeader.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+            lblHeader.ForeColor = Theme.PrimaryColor;
+            lblHeader.Location = new Point(0, 4);
+            lblHeader.AutoSize = true;
+            pnlHeader.Controls.Add(lblHeader);
+
+            btnRemove.Text = "Remove Item";
+            btnRemove.Size = new Size(110, 28);
+            btnRemove.BackColor = Theme.DangerColor;
+            btnRemove.ForeColor = Color.White;
+            btnRemove.FlatStyle = FlatStyle.Flat;
+            btnRemove.FlatAppearance.BorderSize = 0;
+            btnRemove.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+            btnRemove.Cursor = Cursors.Hand;
+            btnRemove.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnRemove.Click += (s, e) => RemoveRequested?.Invoke(this, EventArgs.Empty);
+            pnlHeader.Controls.Add(btnRemove);
+            pnlHeader.Resize += (s, e) =>
+            {
+                btnRemove.Location = new Point(pnlHeader.Width - btnRemove.Width, 0);
+            };
+
+            // ═══════════════════════════════════════════════════════
+            // LINE TOTAL (Docked Bottom)
+            // ═══════════════════════════════════════════════════════
+            var pnlTotal = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 34,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+            Controls.Add(pnlTotal);
+
+            lblLineTotal.Dock = DockStyle.Fill;
+            lblLineTotal.Text = "Line Total: PHP 0.00";
+            lblLineTotal.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+            lblLineTotal.ForeColor = Theme.PrimaryColor;
+            lblLineTotal.TextAlign = ContentAlignment.MiddleRight;
+            pnlTotal.Controls.Add(lblLineTotal);
+
+            // ═══════════════════════════════════════════════════════
+            // TOP FIELDS (Docked Top) — Category | Service | Weight
+            // ═══════════════════════════════════════════════════════
+            var pnlTopFields = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 90,
+                BackColor = Color.Transparent
+            };
+            Controls.Add(pnlTopFields);
+
+            int col1 = 0;
+            int col2 = 260;
+            int col3 = 520;
+
+            AddFieldLabel(pnlTopFields, "Category *", col1, 0);
+            cmbCategory.Location = new Point(col1, 20);
+            cmbCategory.Size = new Size(240, 26);
+            cmbCategory.Font = Theme.BodyFont;
+            cmbCategory.DropDownStyle = ComboBoxStyle.DropDownList;
+            foreach (var c in Categories)
+                cmbCategory.Items.Add(new ComboItem(c.Id, c.Name));
+            cmbCategory.SelectedIndex = 0;
+            cmbCategory.SelectedIndexChanged += (s, e) => Recalculate();
+            pnlTopFields.Controls.Add(cmbCategory);
+
+            AddFieldLabel(pnlTopFields, "Service *", col2, 0);
+            cmbService.Location = new Point(col2, 20);
+            cmbService.Size = new Size(240, 26);
+            cmbService.Font = Theme.BodyFont;
+            cmbService.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbService.SelectedIndexChanged += (s, e) => Recalculate();
+            pnlTopFields.Controls.Add(cmbService);
+
+            AddFieldLabel(pnlTopFields, "Weight (kg) *", col3, 0);
+            numWeight.Location = new Point(col3, 20);
+            numWeight.Size = new Size(120, 26);
+            numWeight.Font = Theme.BodyFont;
+            numWeight.DecimalPlaces = 2;
+            numWeight.Minimum = 0.5m;
+            numWeight.Maximum = 200;
+            numWeight.Value = 1;
+            numWeight.Increment = 0.1m;
+            numWeight.ValueChanged += (s, e) => Recalculate();
+            numWeight.KeyUp += (s, e) => Recalculate();
+            pnlTopFields.Controls.Add(numWeight);
+
+            // Auto-calc row (below fields, full width)
+            var pnlAuto = new Panel
+            {
+                Location = new Point(0, 56),
+                Height = 32,
+                BackColor = Color.FromArgb(240, 248, 255),
+                BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            pnlAuto.Width = 1000;
+
+            pnlAuto.Controls.Add(new Label
+            {
+                Text = "Auto-Calculated:",
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(8, 8),
+                AutoSize = true
+            });
+            pnlAuto.Controls.Add(new Label
+            {
+                Text = "Detergent:",
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Theme.TextDarkColor,
+                Location = new Point(120, 8),
+                AutoSize = true
+            });
+            lblDetergent.Location = new Point(190, 6);
+            lblDetergent.Size = new Size(110, 20);
+            lblDetergent.Text = "0 g";
+            lblDetergent.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            lblDetergent.ForeColor = Theme.SuccessColor;
+            pnlAuto.Controls.Add(lblDetergent);
+
+            pnlAuto.Controls.Add(new Label
+            {
+                Text = "Loads:",
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Theme.TextDarkColor,
+                Location = new Point(320, 8),
+                AutoSize = true
+            });
+            lblLoad.Location = new Point(370, 6);
+            lblLoad.Size = new Size(150, 20);
+            lblLoad.Text = "0 load";
+            lblLoad.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            lblLoad.ForeColor = Theme.AccentColor;
+            pnlAuto.Controls.Add(lblLoad);
+
+            pnlTopFields.Controls.Add(pnlAuto);
+            pnlTopFields.Resize += (s, e) =>
+            {
+                pnlAuto.Width = pnlTopFields.Width;
+            };
+
+            // ═══════════════════════════════════════════════════════
+            // ADD-ONS AREA (Docked Fill) — Chemical (left) + Machine (right)
+            // ═══════════════════════════════════════════════════════
+            var pnlAddOns = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 8, 0, 4)
+            };
+            Controls.Add(pnlAddOns);
+
+            // Chemical container (Dock Left)
+            var pnlChemContainer = BuildAddOnContainer("Chemical Add-ons", lblChemicalTotal);
+            pnlAddOns.Controls.Add(pnlChemContainer);
+            pnlChemical.Dock = DockStyle.Fill;
+            pnlChemical.AutoScroll = true;
+            pnlChemical.BackColor = Color.White;
+            pnlChemical.Padding = new Padding(0, 28, 0, 0);
+            pnlChemContainer.Controls.Add(pnlChemical);
+
+            // Machine container (Dock Right)
+            var pnlMachContainer = BuildAddOnContainer("Machine Add-ons", lblMachineTotal);
+            pnlAddOns.Controls.Add(pnlMachContainer);
+            pnlMachine.Dock = DockStyle.Fill;
+            pnlMachine.AutoScroll = true;
+            pnlMachine.BackColor = Color.White;
+            pnlMachine.Padding = new Padding(0, 28, 0, 0);
+            pnlMachContainer.Controls.Add(pnlMachine);
+
+            BuildChemicalRows();
+            BuildMachineRows();
+            Recalculate();
+        }
+
+        private Panel BuildAddOnContainer(string title, Label totalLabel)
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Left,
+                Width = 480,
+                BackColor = Color.FromArgb(248, 249, 250),
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(6)
+            };
+
+            panel.Controls.Add(new Label
+            {
+                Text = title,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Theme.TextDarkColor,
+                Location = new Point(6, 6),
+                AutoSize = true
+            });
+
+            totalLabel.Location = new Point(330, 6);
+            totalLabel.Size = new Size(135, 20);
+            totalLabel.Text = "PHP 0.00";
+            totalLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+            totalLabel.ForeColor = Theme.SuccessColor;
+            totalLabel.TextAlign = ContentAlignment.MiddleRight;
+            panel.Controls.Add(totalLabel);
+
+            return panel;
+        }
+
+        private static void AddFieldLabel(Control parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(x, y),
+                AutoSize = true
+            });
+        }
+
+        private void BuildChemicalRows()
+        {
+            pnlChemical.Controls.Clear();
+            if (_chemicals.Count == 0)
+            {
+                pnlChemical.Controls.Add(new Label
+                {
+                    Text = "No chemical add-ons available.",
+                    Font = Theme.SmallFont,
+                    ForeColor = Theme.TextLightColor,
+                    Location = new Point(6, 6),
+                    AutoSize = true
+                });
+                return;
+            }
+            int y = 0;
+            foreach (var c in _chemicals)
+            {
+                var row = BuildAddOnRow(c.ServiceName, c.BasePrice, c.ServiceId, _chemQty);
+                row.Location = new Point(0, y);
+                y += row.Height + 2;
+                pnlChemical.Controls.Add(row);
+            }
+        }
+
+        private void BuildMachineRows()
+        {
+            pnlMachine.Controls.Clear();
+            if (_machines.Count == 0)
+            {
+                pnlMachine.Controls.Add(new Label
+                {
+                    Text = "No machine add-ons available.",
+                    Font = Theme.SmallFont,
+                    ForeColor = Theme.TextLightColor,
+                    Location = new Point(6, 6),
+                    AutoSize = true
+                });
+                return;
+            }
+            int y = 0;
+            foreach (var m in _machines)
+            {
+                var row = BuildAddOnRow(m.ServiceName, m.BasePrice, m.ServiceId, _machQty);
+                row.Location = new Point(0, y);
+                y += row.Height + 2;
+                pnlMachine.Controls.Add(row);
+            }
+        }
+
+        private Panel BuildAddOnRow(string name, decimal price, int id, Dictionary<int, int> qtyDict)
+        {
+            var row = new Panel
+            {
+                Size = new Size(460, 32),
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            row.Controls.Add(new Label
+            {
+                Text = name,
+                Location = new Point(6, 6),
+                Width = 200,
+                Font = Theme.BodyFont,
+                ForeColor = Theme.TextDarkColor,
+                AutoSize = false
+            });
+
+            row.Controls.Add(new Label
+            {
+                Text = $"PHP {price:N0}",
+                Location = new Point(210, 6),
+                Width = 70,
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                AutoSize = false
+            });
+
+            var btnMinus = new Button
+            {
+                Text = "-",
+                Location = new Point(290, 3),
+                Size = new Size(28, 26),
+                BackColor = Theme.DangerColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btnMinus.FlatAppearance.BorderSize = 0;
+
+            var txtQty = new TextBox
+            {
+                Location = new Point(322, 4),
+                Width = 40,
+                Text = "0",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                TextAlign = HorizontalAlignment.Center,
+                BorderStyle = BorderStyle.FixedSingle,
+                ReadOnly = true,
+                BackColor = Color.White
+            };
+
+            var btnPlus = new Button
+            {
+                Text = "+",
+                Location = new Point(366, 3),
+                Size = new Size(28, 26),
+                BackColor = Theme.SuccessColor,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btnPlus.FlatAppearance.BorderSize = 0;
+
+            btnPlus.Click += (s, e) =>
+            {
+                int cur = int.TryParse(txtQty.Text, out var v) ? v : 0;
+                cur = Math.Min(99, cur + 1);
+                txtQty.Text = cur.ToString();
+                qtyDict[id] = cur;
+                Recalculate();
+            };
+
+            btnMinus.Click += (s, e) =>
+            {
+                int cur = int.TryParse(txtQty.Text, out var v) ? v : 0;
+                cur = Math.Max(0, cur - 1);
+                txtQty.Text = cur.ToString();
+                qtyDict[id] = cur;
+                Recalculate();
+            };
+
+            row.Controls.Add(btnMinus);
+            row.Controls.Add(txtQty);
+            row.Controls.Add(btnPlus);
+
+            return row;
+        }
+
+        private (decimal detergent, decimal load) CalculateAutoValues(decimal weight)
+        {
+            var category = cmbCategory.SelectedItem as ComboItem;
+            if (category == null) return (0, 0);
+
+            if (category.Text == "Clothes")
+            {
+                const decimal loadCapacity = 8m;
+                decimal loads = Math.Ceiling(weight / loadCapacity);
+                if (loads < 1) loads = 1;
+
+                decimal detergentPerLoad;
+                if (weight >= 1.0m && weight <= 3.0m) detergentPerLoad = 3m;
+                else if (weight > 3.0m && weight <= 7.0m) detergentPerLoad = 4m;
+                else detergentPerLoad = 5m;
+
+                return (detergentPerLoad * loads, loads);
+            }
+            else if (category.Text == "Beddings")
+            {
+                const decimal loadCapacity = 5m;
+                decimal loads = Math.Ceiling(weight / loadCapacity);
+                if (loads < 1) loads = 1;
+
+                decimal detergentPerLoad;
+                if (weight >= 1.0m && weight <= 3.0m) detergentPerLoad = 3m;
+                else detergentPerLoad = 5m;
+
+                return (detergentPerLoad * loads, loads);
+            }
+
+            return (0, 0);
+        }
+
+        private void Recalculate()
+        {
+            var service = cmbService.SelectedItem as ServiceItem;
+            if (service == null) return;
+
+            decimal weight = GetCurrentWeight();
+            if (weight <= 0) return;
+
+            var (detergent, loads) = CalculateAutoValues(weight);
+
+            lblDetergent.Text = $"{detergent:0.#} g";
+            lblLoad.Text = $"{loads:0.#} load{(loads != 1 ? "s" : "")}";
+
+            decimal serviceLine = service.PricePerKg * weight;
+
+            decimal chemTotal = 0;
+            foreach (var c in _chemicals)
+                if (_chemQty.TryGetValue(c.ServiceId, out int q))
+                    chemTotal += c.BasePrice * q;
+
+            decimal machTotal = 0;
+            foreach (var m in _machines)
+                if (_machQty.TryGetValue(m.ServiceId, out int q))
+                    machTotal += m.BasePrice * q;
+
+            ServiceLineTotal = serviceLine;
+            ChemicalTotal = chemTotal;
+            MachineTotal = machTotal;
+            LineTotal = serviceLine + chemTotal + machTotal;
+
+            lblChemicalTotal.Text = $"PHP {chemTotal:N2}";
+            lblMachineTotal.Text = $"PHP {machTotal:N2}";
+            lblLineTotal.Text = $"Line Total: PHP {LineTotal:N2}";
+
+            ItemChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private decimal GetCurrentWeight()
+        {
+            try
+            {
+                if (decimal.TryParse(numWeight.Text, out var parsed))
+                {
+                    if (parsed < numWeight.Minimum) return numWeight.Minimum;
+                    if (parsed > numWeight.Maximum) return numWeight.Maximum;
+                    return parsed;
+                }
+            }
+            catch { }
+            return numWeight.Value;
+        }
+
+        public async System.Threading.Tasks.Task InitializeDataAsync(
+            CRM.WinForms.Services.ServiceApiService serviceApi)
+        {
+            if (_dataLoaded) return;
+
+            try
+            {
+                _services = await serviceApi.GetAllAsync(serviceType: 1);
+                _chemicals = await serviceApi.GetAllAsync(serviceType: 2);
+                _machines = await serviceApi.GetAllAsync(serviceType: 3);
+
+                cmbService.Items.Clear();
+                foreach (var s in _services)
+                    cmbService.Items.Add(new ServiceItem(s.ServiceId, s.ServiceName, s.BasePrice));
+
+                if (cmbService.Items.Count > 0)
+                    cmbService.SelectedIndex = 0;
+                else
+                    cmbService.Items.Add(new ServiceItem(0, "(no services available)", 0m));
+
+                BuildChemicalRows();
+                BuildMachineRows();
+
+                _dataLoaded = true;
+                Recalculate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load service data: {ex.Message}",
+                    "Order Item Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        public bool IsValid(out string error)
+        {
+            if (cmbCategory.SelectedItem == null)
+            {
+                error = $"Item #{ItemNumber}: Please select a Category.";
+                return false;
+            }
+            if (cmbService.SelectedItem == null)
+            {
+                error = $"Item #{ItemNumber}: Please select a Service.";
+                return false;
+            }
+            error = "";
+            return true;
+        }
+    }
+
+    // Support classes
+    public class ComboItem
+    {
+        public int Value { get; }
+        public string Text { get; }
+        public ComboItem(int value, string text) { Value = value; Text = text; }
+        public override string ToString() => Text;
+    }
+
+    public class ServiceItem
+    {
+        public int Value { get; }
+        public string Text { get; }
+        public decimal PricePerKg { get; }
+        public ServiceItem(int value, string text, decimal pricePerKg)
+        {
+            Value = value; Text = text; PricePerKg = pricePerKg;
+        }
+        public override string ToString() => Text;
+    }
+}

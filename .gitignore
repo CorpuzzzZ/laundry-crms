@@ -1,0 +1,27 @@
+# Visual Studio
+.vs/
+.vscode/
+
+# Build output
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# Backup files and folders
+_backup_*/
+_backup_*
+
+# Diagnostic files
+_diagnostic.txt
+
+# OS files
+.DS_Store
+Thumbs.db

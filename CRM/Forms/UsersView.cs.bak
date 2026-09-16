@@ -1,0 +1,386 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.UI.Controls;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.WinForms.Forms
+{
+    /// <summary>
+    /// Users list view with FAB for new user and card-based list.
+    /// </summary>
+    public class UsersView : UserControl
+    {
+        private readonly UserApiService _userService = new(ApiClient.Instance);
+        private FlowLayoutPanel pnlCards = null!;
+        private TextBox txtSearch = null!;
+        private ComboBox cmbRole = null!;
+        private ComboBox cmbActive = null!;
+        private Label lblHeader = null!;
+        private FloatingActionButton fabNew = null!;
+
+        public UsersView()
+        {
+            InitializeComponent();
+            Load += async (s, e) => await LoadDataAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+
+            // ── Filter Panel ─────────────────────────────────
+            var pnlFilter = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 72,
+                BackColor = Colors.Surface,
+                Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Lg)
+            };
+            pnlFilter.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawLine(pen, 0, pnlFilter.Height - 1, pnlFilter.Width, pnlFilter.Height - 1);
+            };
+
+            lblHeader = new Label
+            {
+                Text = "Users",
+                Font = Typography.H2,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(Spacing.Xl, 22)
+            };
+            pnlFilter.Controls.Add(lblHeader);
+
+            var lblSearch = new Label
+            {
+                Text = "Search",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                AutoSize = true,
+                Location = new Point(180, 12)
+            };
+            pnlFilter.Controls.Add(lblSearch);
+
+            txtSearch = new TextBox
+            {
+                Location = new Point(180, 32),
+                Width = 220,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            txtSearch.KeyPress += async (s, e) =>
+            {
+                if (e.KeyChar == (char)Keys.Enter) await LoadDataAsync();
+            };
+            pnlFilter.Controls.Add(txtSearch);
+
+            var lblRole = new Label
+            {
+                Text = "Role",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                AutoSize = true,
+                Location = new Point(420, 12)
+            };
+            pnlFilter.Controls.Add(lblRole);
+
+            cmbRole = new ComboBox
+            {
+                Location = new Point(420, 32),
+                Width = 120,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbRole.Items.AddRange(new object[] { "All", "Admin", "Manager", "Crew" });
+            cmbRole.SelectedIndex = 0;
+            cmbRole.SelectedIndexChanged += async (s, e) => await LoadDataAsync();
+            pnlFilter.Controls.Add(cmbRole);
+
+            var lblActive = new Label
+            {
+                Text = "Status",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                AutoSize = true,
+                Location = new Point(560, 12)
+            };
+            pnlFilter.Controls.Add(lblActive);
+
+            cmbActive = new ComboBox
+            {
+                Location = new Point(560, 32),
+                Width = 120,
+                Font = Typography.Body,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbActive.Items.AddRange(new object[] { "All", "Active", "Inactive" });
+            cmbActive.SelectedIndex = 0;
+            cmbActive.SelectedIndexChanged += async (s, e) => await LoadDataAsync();
+            pnlFilter.Controls.Add(cmbActive);
+
+            var btnSearch = new Button
+            {
+                Text = "Search",
+                Location = new Point(700, 30),
+                Width = 90,
+                Height = 32,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand
+            };
+            btnSearch.FlatAppearance.BorderSize = 0;
+            btnSearch.Click += async (s, e) => await LoadDataAsync();
+            pnlFilter.Controls.Add(btnSearch);
+
+            var btnRefresh = new Button
+            {
+                Text = "Refresh",
+                Location = new Point(800, 30),
+                Width = 90,
+                Height = 32,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand
+            };
+            btnRefresh.FlatAppearance.BorderColor = Colors.Border;
+            btnRefresh.Click += async (s, e) => await LoadDataAsync();
+            pnlFilter.Controls.Add(btnRefresh);
+
+            // ── Cards Panel ──────────────────────────────────
+            pnlCards = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                BackColor = Colors.Background,
+                Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, 100)
+            };
+
+            // ── FAB ──────────────────────────────────────────
+            fabNew = new FloatingActionButton
+            {
+                NormalColor = Colors.Primary,
+                HoverColor = Colors.PrimaryHover,
+                PressedColor = Colors.PrimaryActive,
+                GlyphColor = Color.White,
+                Visible = false
+            };
+            fabNew.Click += (s, e) => OpenEditView("");
+
+            Controls.Add(fabNew);   // FAB on UsersView, NOT pnlCards
+            Controls.Add(pnlCards);
+            Controls.Add(pnlFilter);
+
+            fabNew.BringToFront();
+            fabNew.PinToParentBottomRight();
+
+            Load += (s, e) => ApplyPermissionGates();
+        }
+
+        private void ApplyPermissionGates()
+        {
+            var user = SessionManager.CurrentUser;
+            bool canCreate = user?.IsAdmin == true || user?.IsSuperAdmin == true;
+            fabNew.Visible = canCreate;
+            if (canCreate && fabNew.Parent != null)
+                fabNew.BringToFront();
+        }
+
+        private async Task LoadDataAsync()
+        {
+            pnlCards.Controls.Clear();
+
+            string? search = string.IsNullOrWhiteSpace(txtSearch.Text) ? null : txtSearch.Text.Trim();
+            string? role = cmbRole.SelectedIndex == 0 ? null : cmbRole.SelectedItem?.ToString();
+            bool? isActive = cmbActive.SelectedIndex switch
+            {
+                1 => true,
+                2 => false,
+                _ => null
+            };
+
+            List<UserModel> users;
+            try
+            {
+                users = await _userService.GetAllAsync(search, role, isActive);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load users: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            lblHeader.Text = $"Users ({users.Count})";
+
+            if (users.Count == 0)
+            {
+                var empty = new Label
+                {
+                    Text = "No users found.\nClick the + button to add a user.",
+                    Font = Typography.H2,
+                    ForeColor = Colors.TextMuted,
+                    AutoSize = false,
+                    Width = 600,
+                    Height = 120,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Margin = new Padding(0, 40, 0, 0)
+                };
+                pnlCards.Controls.Add(empty);
+                return;
+            }
+
+            int cardWidth = pnlCards.ClientSize.Width
+                            - pnlCards.Padding.Left - pnlCards.Padding.Right
+                            - SystemInformation.VerticalScrollBarWidth - 4;
+            if (cardWidth < 200) cardWidth = 700;
+
+            foreach (var u in users)
+                pnlCards.Controls.Add(BuildUserCard(u, cardWidth));
+        }
+
+        private Panel BuildUserCard(UserModel user, int width)
+        {
+            var card = new RoundedCard
+            {
+                Width = width,
+                Height = 110,
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                HoverBorderColor = Colors.Primary,
+                AccentColor = user.IsActive ? Colors.Success : Colors.TextMuted,
+                AccentWidth = 4,
+                EnableHover = true,
+                ShowShadow = true,
+                Margin = new Padding(0, 0, 0, 12),
+                Padding = new Padding(20, 14, 20, 14),
+                Cursor = Cursors.Hand
+            };
+
+            // Full name
+            card.Controls.Add(new Label
+            {
+                Text = user.FullName,
+                Font = Typography.H3,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(20, 14),
+                BackColor = Color.Transparent
+            });
+
+            // Email · Role
+            card.Controls.Add(new Label
+            {
+                Text = $"{user.Email}  |  {user.Role}",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                AutoSize = true,
+                Location = new Point(20, 40),
+                BackColor = Color.Transparent
+            });
+
+            // Phone
+            if (!string.IsNullOrWhiteSpace(user.PhoneNumber))
+            {
+                card.Controls.Add(new Label
+                {
+                    Text = user.PhoneNumber,
+                    Font = Typography.Small,
+                    ForeColor = Colors.TextMuted,
+                    AutoSize = true,
+                    Location = new Point(20, 62),
+                    BackColor = Color.Transparent
+                });
+            }
+
+            // Branches
+            card.Controls.Add(new Label
+            {
+                Text = user.BranchSummary,
+                Font = Typography.Small,
+                ForeColor = user.BranchNames.Count == 0 ? Colors.TextMuted : Colors.TextSecondary,
+                AutoSize = true,
+                Location = new Point(20, 84),
+                BackColor = Color.Transparent
+            });
+
+            // Status badge
+            var statusColor = user.IsActive ? Colors.Success : Colors.TextMuted;
+            var badge = new Label
+            {
+                Text = user.IsActive ? "Active" : "Inactive",
+                Font = Typography.Tiny,
+                ForeColor = statusColor,
+                BackColor = Color.FromArgb(30, statusColor),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(80, 22),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            badge.Location = new Point(card.Width - 100, 16);
+            card.Controls.Add(badge);
+
+            // Role badge
+            var roleColor = user.Role switch
+            {
+                "Admin" => Colors.Primary,
+                "Manager" => Colors.Warning,
+                _ => Colors.TextSecondary
+            };
+            var roleBadge = new Label
+            {
+                Text = user.Role,
+                Font = Typography.Tiny,
+                ForeColor = roleColor,
+                BackColor = Color.FromArgb(30, roleColor),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(80, 22),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            roleBadge.Location = new Point(card.Width - 100, 44);
+            card.Controls.Add(roleBadge);
+
+            // Click → edit
+            EventHandler onClick = (s, e) => OpenEditView(user.Id);
+            AttachClickRecursive(card, onClick);
+
+            return card;
+        }
+
+        private static void AttachClickRecursive(Control parent, EventHandler handler)
+        {
+            parent.Click += handler;
+            foreach (Control child in parent.Controls)
+                AttachClickRecursive(child, handler);
+        }
+
+        private void OpenEditView(string userId)
+        {
+            var editPanel = new CRM.UI.Controls.UserEditPanel(userId);
+            editPanel.Saved += (s, e) =>
+            {
+                editPanel.Dispose();
+                _ = LoadDataAsync();
+            };
+            editPanel.Cancelled += (s, e) =>
+            {
+                editPanel.Dispose();
+            };
+            editPanel.Dock = DockStyle.Fill;
+            Controls.Add(editPanel);
+            editPanel.BringToFront();
+        }
+    }
+}
