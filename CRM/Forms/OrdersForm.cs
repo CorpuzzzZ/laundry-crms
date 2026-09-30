@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using CRM.UI;
 using CRM.UI.Controls;
 using CRM.WinForms.Models;
 using CRM.WinForms.Services;
@@ -69,129 +70,85 @@ namespace CRM.WinForms.Forms
             var pnlTabs = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 52,
-                BackColor = Color.White,
-                Padding = new Padding(20, 8, 20, 8)
+                Height = 56,
+                BackColor = Colors.Surface,
+                Padding = new Padding(24, 10, 24, 10)
+            };
+            pnlTabs.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border, 1f);
+                e.Graphics.DrawLine(pen, 0, pnlTabs.Height - 1, pnlTabs.Width, pnlTabs.Height - 1);
             };
 
-            btnTabPending = new Button
-            {
-                Text = "Pending Orders",
-                Location = new Point(20, 10),
-                Width = 160,
-                Height = 34,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btnTabPending.FlatAppearance.BorderSize = 0;
-            btnTabPending.Click += (s, e) => SwitchTab(OrdersTab.Pending);
+            btnTabPending = CreateTabButton("Pending Orders", 24, 150, OrdersTab.Pending);
             pnlTabs.Controls.Add(btnTabPending);
 
-            btnTabReady = new Button
-            {
-                Text = "Ready",
-                Location = new Point(184, 10),
-                Width = 120,
-                Height = 34,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btnTabReady.FlatAppearance.BorderSize = 0;
-            btnTabReady.Click += (s, e) => SwitchTab(OrdersTab.Ready);
+            btnTabReady = CreateTabButton("Ready", 182, 110, OrdersTab.Ready);
             pnlTabs.Controls.Add(btnTabReady);
 
-            btnTabPickedUp = new Button
-            {
-                Text = "Picked Up",
-                Location = new Point(308, 10),
-                Width = 130,
-                Height = 34,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btnTabPickedUp.FlatAppearance.BorderSize = 0;
-            btnTabPickedUp.Click += (s, e) => SwitchTab(OrdersTab.PickedUp);
+            btnTabPickedUp = CreateTabButton("Picked Up", 300, 120, OrdersTab.PickedUp);
             pnlTabs.Controls.Add(btnTabPickedUp);
 
-            btnTabHistory = new Button
-            {
-                Text = "Transaction History",
-                Location = new Point(442, 10),
-                Width = 180,
-                Height = 34,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btnTabHistory.FlatAppearance.BorderSize = 0;
-            btnTabHistory.Click += (s, e) => SwitchTab(OrdersTab.History);
+            btnTabHistory = CreateTabButton("Transaction History", 428, 170, OrdersTab.History);
             pnlTabs.Controls.Add(btnTabHistory);
 
             // ============ TOP: FILTERS ============
             var pnlFilter = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 80,
-                BackColor = Color.White,
-                Padding = new Padding(20, 15, 20, 15)
+                Height = 74,
+                BackColor = Colors.Surface,
+                Padding = new Padding(24, 12, 24, 12)
+            };
+            pnlFilter.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border, 1f);
+                e.Graphics.DrawLine(pen, 0, pnlFilter.Height - 1, pnlFilter.Width, pnlFilter.Height - 1);
             };
 
-            var lblSearch = new Label { Text = "Search", Font = Theme.SmallFont, ForeColor = Theme.TextLightColor, Location = new Point(20, 5), AutoSize = true };
-            txtSearch = new TextBox { Location = new Point(20, 25), Width = 250, Font = Theme.BodyFont, BorderStyle = BorderStyle.FixedSingle };
+            var lblSearch = new Label { Text = "Search", Font = Typography.Small, ForeColor = Colors.TextSecondary, Location = new Point(24, 8), AutoSize = true };
+            txtSearch = new TextBox { Location = new Point(24, 28), Width = 230, Font = Typography.Body, BorderStyle = BorderStyle.FixedSingle };
             txtSearch.KeyPress += async (s, e) => { if (e.KeyChar == (char)Keys.Enter) await SearchAsync(); };
 
-            var lblStatus = new Label { Text = "Status", Font = Theme.SmallFont, ForeColor = Theme.TextLightColor, Location = new Point(290, 5), AutoSize = true };
-            cmbStatus = new ComboBox { Location = new Point(290, 25), Width = 140, Font = Theme.BodyFont, DropDownStyle = ComboBoxStyle.DropDownList };
+            var lblStatus = new Label { Text = "Status", Font = Typography.Small, ForeColor = Colors.TextSecondary, Location = new Point(270, 8), AutoSize = true };
+            cmbStatus = new ComboBox { Location = new Point(270, 28), Width = 140, Font = Typography.Body, DropDownStyle = ComboBoxStyle.DropDownList };
             cmbStatus.Items.Add("All Statuses");
             cmbStatus.SelectedIndex = 0;
             cmbStatus.SelectedIndexChanged += async (s, e) => await SearchAsync();
 
-            var lblFrom = new Label { Text = "From", Font = Theme.SmallFont, ForeColor = Theme.TextLightColor, Location = new Point(450, 5), AutoSize = true };
-            dtpFrom = new DateTimePicker { Location = new Point(450, 25), Width = 130, Font = Theme.BodyFont, Format = DateTimePickerFormat.Short, Value = DateTime.Today.AddDays(-30) };
+            var lblFrom = new Label { Text = "From", Font = Typography.Small, ForeColor = Colors.TextSecondary, Location = new Point(426, 8), AutoSize = true };
+            dtpFrom = new DateTimePicker { Location = new Point(426, 28), Width = 120, Font = Typography.Body, Format = DateTimePickerFormat.Short, Value = DateTime.Today.AddDays(-30) };
 
-            var lblTo = new Label { Text = "To", Font = Theme.SmallFont, ForeColor = Theme.TextLightColor, Location = new Point(600, 5), AutoSize = true };
-            dtpTo = new DateTimePicker { Location = new Point(600, 25), Width = 130, Font = Theme.BodyFont, Format = DateTimePickerFormat.Short, Value = DateTime.Today };
+            var lblTo = new Label { Text = "To", Font = Typography.Small, ForeColor = Colors.TextSecondary, Location = new Point(560, 8), AutoSize = true };
+            dtpTo = new DateTimePicker { Location = new Point(560, 28), Width = 120, Font = Typography.Body, Format = DateTimePickerFormat.Short, Value = DateTime.Today };
 
-            btnSearch = new Button { Text = "Search", Location = new Point(750, 23), Width = 100, Height = 32 };
+            btnSearch = new Button { Text = "Search", Location = new Point(696, 26), Width = 90, Height = 32 };
             Theme.StylePrimaryButton(btnSearch);
             btnSearch.Click += async (s, e) => await SearchAsync();
 
-            btnRefresh = new Button { Text = "Refresh", Location = new Point(860, 23), Width = 100, Height = 32 };
+            btnRefresh = new Button { Text = "Refresh", Location = new Point(796, 26), Width = 90, Height = 32 };
             Theme.StyleSecondaryButton(btnRefresh);
             btnRefresh.Click += async (s, e) => await LoadDataAsync();
-
-            pnlFilter.Controls.AddRange(new Control[]
-            {
-                lblSearch, txtSearch, lblStatus, cmbStatus,
-                lblFrom, dtpFrom, lblTo, dtpTo, btnSearch, btnRefresh
-            });
-
-            // ============ TOOLBAR ============
-            var pnlToolbar = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 60,
-                BackColor = Color.White,
-                Padding = new Padding(20, 10, 20, 10)
-            };
 
             lblCount = new Label
             {
                 Text = "0 orders",
-                Font = Theme.BodyFont,
-                ForeColor = Theme.TextLightColor,
+                Font = Typography.BodyBold,
+                ForeColor = Colors.TextSecondary,
                 AutoSize = true,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(pnlFilter.Width - 110, 32)
             };
-            pnlToolbar.Controls.Add(lblCount);
-            pnlToolbar.Resize += (s, e) =>
+            pnlFilter.Resize += (s, e) =>
             {
-                lblCount.Location = new Point(pnlToolbar.Width - lblCount.Width - 20, 22);
+                lblCount.Left = pnlFilter.ClientSize.Width - lblCount.Width - 24;
             };
 
+            pnlFilter.Controls.AddRange(new Control[]
+            {
+                lblSearch, txtSearch, lblStatus, cmbStatus,
+                lblFrom, dtpFrom, lblTo, dtpTo, btnSearch, btnRefresh, lblCount
+            });
 
             // ============ ORDER LIST (cards) ============
             pnlOrderList = new FlowLayoutPanel
@@ -200,22 +157,22 @@ namespace CRM.WinForms.Forms
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
                 AutoScroll = true,
-                BackColor = Theme.BackgroundColor,
-                Padding = new Padding(20, 20, 20, 100)  // 100px bottom padding for FAB clearance
+                BackColor = Colors.Background,
+                Padding = new Padding(24, 20, 24, 100)  // 100px bottom padding for FAB clearance
             };
             pnlOrderList.Resize += (s, e) => ResizeCards();
 
             // ============ FLOATING ACTION BUTTON ============
             btnFab = new Button
             {
-                Size = new Size(60, 60),
+                Size = new Size(58, 58),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Theme.AccentColor,
+                BackColor = Colors.Primary,
                 Cursor = Cursors.Hand,
                 TabStop = false
             };
             btnFab.FlatAppearance.BorderSize = 0;
-            btnFab.FlatAppearance.MouseOverBackColor = Theme.PrimaryColor;
+            btnFab.FlatAppearance.MouseOverBackColor = Colors.PrimaryHover;
             btnFab.Click += (s, e) => CreateOrder();
 
             // Draw a centered white "+"
@@ -249,7 +206,6 @@ namespace CRM.WinForms.Forms
             applyCircle();
 
             Controls.Add(pnlOrderList);
-            Controls.Add(pnlToolbar);
             Controls.Add(pnlFilter);
             Controls.Add(pnlTabs);
             Controls.Add(btnFab);
@@ -351,6 +307,30 @@ namespace CRM.WinForms.Forms
             lblCount.Text = $"{count} order{(count != 1 ? "s" : "")}";
         }
 
+        private Button CreateTabButton(string text, int x, int width, OrdersTab tab)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Location = new Point(x, 10),
+                Width = width,
+                Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Click += (s, e) => SwitchTab(tab);
+            using var path = new System.Drawing.Drawing2D.GraphicsPath();
+            path.AddArc(0, 0, 16, 16, 180, 90);
+            path.AddArc(width - 16, 0, 16, 16, 270, 90);
+            path.AddArc(width - 16, 36 - 16, 16, 16, 0, 90);
+            path.AddArc(0, 36 - 16, 16, 16, 90, 90);
+            path.CloseFigure();
+            btn.Region = new Region(path);
+            return btn;
+        }
+
         private void ApplyTabStyles()
         {
             StyleTab(btnTabPending, _currentTab == OrdersTab.Pending);
@@ -361,13 +341,13 @@ namespace CRM.WinForms.Forms
 
         private static void StyleTab(Button btn, bool isActive)
         {
-            btn.BackColor = isActive ? Theme.AccentColor : Color.White;
-            btn.ForeColor = isActive ? Color.White : Theme.TextLightColor;
+            btn.BackColor = isActive ? Colors.Primary : Color.Transparent;
+            btn.ForeColor = isActive ? Color.White : Colors.TextSecondary;
         }
 
         private void ResizeCards()
         {
-            int targetWidth = pnlOrderList.ClientSize.Width - 40;
+            int targetWidth = pnlOrderList.ClientSize.Width - 48;
             if (targetWidth < 400) targetWidth = 400;
 
             foreach (Control c in pnlOrderList.Controls)
@@ -378,21 +358,21 @@ namespace CRM.WinForms.Forms
 
         private RoundedCard BuildOrderCard(OrderModel order)
         {
-            int cardWidth = pnlOrderList.ClientSize.Width - 40;
+            int cardWidth = pnlOrderList.ClientSize.Width - 48;
             if (cardWidth < 400) cardWidth = 400;
 
             var card = new RoundedCard
             {
                 Width = cardWidth,
-                Height = 120,
+                Height = 126,
                 Margin = new Padding(0, 0, 0, 14),
-                Padding = new Padding(24, 16, 24, 16),
-                CornerRadius = 10,
-                FillColor = Color.White,
-                BorderColor = Theme.BorderColor,
-                HoverBorderColor = Theme.AccentColor,
+                Padding = new Padding(24, 18, 24, 18),
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                HoverBorderColor = Colors.Primary,
                 EnableHover = true,
-                ShowShadow = false,
+                ShowShadow = true,
                 Cursor = Cursors.Hand,
                 Tag = order
             };
@@ -400,28 +380,29 @@ namespace CRM.WinForms.Forms
             var lblOrder = new Label
             {
                 Text = order.OrderNumber,
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-                ForeColor = Theme.TextDarkColor,
+                Font = new Font("Segoe UI", 12.5F, FontStyle.Bold),
+                ForeColor = Colors.TextPrimary,
                 Location = new Point(24, 18),
                 AutoSize = true,
                 BackColor = Color.Transparent
             };
 
-            var lblStatus = new Label
+            var (statusBg, statusFg) = GetStatusPillColors(order.StatusName);
+            var badgeStatus = new PillBadge
             {
-                Text = order.StatusName,
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = GetStatusColor(order.StatusName),
-                Size = new Size(110, 24),
-                TextAlign = ContentAlignment.MiddleCenter
+                BadgeText = order.StatusName ?? "Pending",
+                FillColor = statusBg,
+                TextColor = statusFg,
+                Size = new Size(116, 26),
+                CornerRadius = 13,
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
             };
 
             var lblCustomer = new Label
             {
-                Text = $"{order.CustomerName}   {order.CustomerPhone}",
-                Font = Theme.BodyFont,
-                ForeColor = Theme.TextLightColor,
+                Text = $"{order.CustomerName}   •   {order.CustomerPhone}",
+                Font = Typography.Body,
+                ForeColor = Colors.TextSecondary,
                 Location = new Point(24, 52),
                 AutoSize = true,
                 BackColor = Color.Transparent
@@ -431,10 +412,10 @@ namespace CRM.WinForms.Forms
             {
                 Text = _currentTab == OrdersTab.History && order.Payments != null && order.Payments.Count > 0
                     ? $"Paid: {order.Payments.Max(p => p.PaymentDate):yyyy-MM-dd HH:mm}"
-                    : order.OrderDate.ToString("yyyy-MM-dd HH:mm"),
-                Font = Theme.SmallFont,
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(24, 84),
+                    : $"Ordered: {order.OrderDate:yyyy-MM-dd HH:mm}",
+                Font = Typography.Small,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(24, 86),
                 AutoSize = true,
                 BackColor = Color.Transparent
             };
@@ -442,15 +423,15 @@ namespace CRM.WinForms.Forms
             var lblTotal = new Label
             {
                 Text = $"PHP {order.TotalAmount:N2}",
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-                ForeColor = Theme.AccentColor,
+                Font = new Font("Segoe UI", 12.5F, FontStyle.Bold),
+                ForeColor = Colors.Primary,
                 Size = new Size(160, 26),
                 TextAlign = ContentAlignment.MiddleRight,
                 BackColor = Color.Transparent
             };
 
             card.Controls.Add(lblOrder);
-            card.Controls.Add(lblStatus);
+            card.Controls.Add(badgeStatus);
             card.Controls.Add(lblCustomer);
             card.Controls.Add(lblDate);
             card.Controls.Add(lblTotal);
@@ -461,30 +442,39 @@ namespace CRM.WinForms.Forms
 
             var btnPay = new Button
             {
-                Text = isFullyPaid ? "Paid" : "Pay",
-                Size = new Size(80, 32),
+                Text = isFullyPaid ? "✓ Paid" : "Pay",
+                Size = new Size(84, 32),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = isFullyPaid ? Theme.SuccessColor : Theme.AccentColor,
-                ForeColor = Color.White,
+                BackColor = isFullyPaid ? Color.FromArgb(241, 245, 249) : Colors.Primary,
+                ForeColor = isFullyPaid ? Colors.TextSecondary : Color.White,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 Cursor = isFullyPaid ? Cursors.Default : Cursors.Hand,
                 Enabled = !isFullyPaid
             };
             btnPay.FlatAppearance.BorderSize = 0;
+            // Round pay button corners
+            using (var bPath = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                bPath.AddArc(0, 0, 10, 10, 180, 90);
+                bPath.AddArc(84 - 10, 0, 10, 10, 270, 90);
+                bPath.AddArc(84 - 10, 32 - 10, 10, 10, 0, 90);
+                bPath.AddArc(0, 32 - 10, 10, 10, 90, 90);
+                bPath.CloseFigure();
+                btnPay.Region = new Region(bPath);
+            }
             btnPay.Click += (s, e) => PayOrderRequested?.Invoke(this, order.OrderId);
             card.Controls.Add(btnPay);
 
             Action layoutRight = () =>
             {
-                lblStatus.Location = new Point(card.Width - lblStatus.Width - 24, 18);
-                lblTotal.Location  = new Point(card.Width - lblTotal.Width - 24, 84);
-                btnPay.Location = new Point(card.Width - btnPay.Width - 24, 46);
+                badgeStatus.Location = new Point(card.Width - badgeStatus.Width - 24, 18);
+                lblTotal.Location    = new Point(card.Width - lblTotal.Width - 24, 86);
+                btnPay.Location      = new Point(card.Width - btnPay.Width - 24, 48);
             };
             card.Resize += (s, e) => layoutRight();
             layoutRight();
 
             // Card click → open the order directly
-            // Card click → open the order directly (unless locked)
             EventHandler clickHandler = (s, e) =>
             {
                 if (order.StatusCode == "PU" || order.StatusCode == "DE")
@@ -502,19 +492,19 @@ namespace CRM.WinForms.Forms
             return card;
         }
 
-        private static Color GetStatusColor(string? statusName)
+        private static (Color bg, Color fg) GetStatusPillColors(string? statusName)
         {
-            return statusName?.ToLowerInvariant() switch
+            return statusName?.Trim().ToLowerInvariant() switch
             {
-                "pending" => Theme.WarningColor,
-                "in progress" => Theme.AccentColor,
-                "processing" => Theme.AccentColor,
-                "ready" => Theme.SuccessColor,
-                "picked up" => Theme.PrimaryColor,
-                "completed" => Theme.SuccessColor,
-                "delivered" => Theme.SuccessColor,
-                "cancelled" => Theme.DangerColor,
-                _ => Theme.TextLightColor
+                "pending" => (Color.FromArgb(254, 243, 199), Color.FromArgb(217, 119, 6)),
+                "in progress" => (Color.FromArgb(239, 246, 255), Color.FromArgb(37, 99, 235)),
+                "processing" => (Color.FromArgb(239, 246, 255), Color.FromArgb(37, 99, 235)),
+                "ready" => (Color.FromArgb(209, 250, 229), Color.FromArgb(5, 150, 105)),
+                "picked up" => (Color.FromArgb(236, 253, 245), Color.FromArgb(4, 120, 87)),
+                "completed" => (Color.FromArgb(236, 253, 245), Color.FromArgb(4, 120, 87)),
+                "delivered" => (Color.FromArgb(236, 253, 245), Color.FromArgb(4, 120, 87)),
+                "cancelled" => (Color.FromArgb(255, 228, 230), Color.FromArgb(225, 29, 72)),
+                _ => (Color.FromArgb(241, 245, 249), Color.FromArgb(100, 116, 139))
             };
         }
 

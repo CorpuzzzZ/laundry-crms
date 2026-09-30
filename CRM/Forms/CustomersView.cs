@@ -82,29 +82,33 @@ namespace CRM.WinForms.Forms
             };
 
             // ============================================
-            // FILTER PANEL
-            // ============================================
+            // ============ FILTER PANEL ============
             var pnlFilter = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 80,
-                BackColor = Color.White,
-                Padding = new Padding(20, 15, 20, 15)
+                Height = 74,
+                BackColor = Colors.Surface,
+                Padding = new Padding(24, 12, 24, 12)
+            };
+            pnlFilter.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border, 1f);
+                e.Graphics.DrawLine(pen, 0, pnlFilter.Height - 1, pnlFilter.Width, pnlFilter.Height - 1);
             };
 
             var lblSearch = new Label
             {
                 Text = "Search",
-                Font = Theme.SmallFont,
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(20, 5),
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(24, 8),
                 AutoSize = true
             };
             txtSearch = new TextBox
             {
-                Location = new Point(20, 25),
-                Width = 300,
-                Font = Theme.BodyFont,
+                Location = new Point(24, 28),
+                Width = 260,
+                Font = Typography.Body,
                 BorderStyle = BorderStyle.FixedSingle
             };
             txtSearch.KeyPress += async (s, e) => { if (e.KeyChar == (char)Keys.Enter) await SearchAsync(); };
@@ -113,16 +117,16 @@ namespace CRM.WinForms.Forms
             var lblType = new Label
             {
                 Text = "Type",
-                Font = Theme.SmallFont,
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(340, 5),
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(300, 8),
                 AutoSize = true
             };
             cmbType = new ComboBox
             {
-                Location = new Point(340, 25),
+                Location = new Point(300, 28),
                 Width = 130,
-                Font = Theme.BodyFont,
+                Font = Typography.Body,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
             cmbType.Items.AddRange(new object[] { "All", "Individual", "Business" });
@@ -133,16 +137,16 @@ namespace CRM.WinForms.Forms
             var lblActive = new Label
             {
                 Text = "Status",
-                Font = Theme.SmallFont,
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(490, 5),
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(446, 8),
                 AutoSize = true
             };
             cmbActive = new ComboBox
             {
-                Location = new Point(490, 25),
+                Location = new Point(446, 28),
                 Width = 120,
-                Font = Theme.BodyFont,
+                Font = Typography.Body,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
             cmbActive.Items.AddRange(new object[] { "All", "Active", "Inactive" });
@@ -153,9 +157,9 @@ namespace CRM.WinForms.Forms
             chkShowArchived = new CheckBox
             {
                 Text = "Show Archived",
-                Font = Theme.SmallFont,
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(850, 28),
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(800, 31),
                 AutoSize = true,
                 Cursor = Cursors.Hand
             };
@@ -165,21 +169,20 @@ namespace CRM.WinForms.Forms
             btnSearch = new Button
             {
                 Text = "Search",
-                Location = new Point(630, 24),
-                Width = 100,
-                Height = 30
+                Location = new Point(586, 26),
+                Width = 90,
+                Height = 32
             };
             Theme.StylePrimaryButton(btnSearch);
             btnSearch.Click += async (s, e) => await SearchAsync();
             pnlFilter.Controls.Add(btnSearch);
 
-            // Refresh button - aligned with Search
             btnRefresh = new Button
             {
                 Text = "Refresh",
-                Location = new Point(740, 24),
-                Width = 100,
-                Height = 30
+                Location = new Point(686, 26),
+                Width = 90,
+                Height = 32
             };
             Theme.StyleSecondaryButton(btnRefresh);
             btnRefresh.Click += async (s, e) => await LoadDataAsync();

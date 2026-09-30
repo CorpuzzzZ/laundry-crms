@@ -126,12 +126,15 @@ namespace CRM.WinForms.Forms
             };
 
             // Inner card with fixed height that content actually needs
-            var card = new Panel
+            var card = new DashboardCard
             {
                 Location = new Point(40, 24),
-                Width = 900,          // will be widened to fit on resize below
-                Height = 580,         // actual content height — increase if you add fields
-                BackColor = Colors.Surface,
+                Width = 900,
+                Height = 580,
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
                 Padding = new Padding(28, 24, 28, 24),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
@@ -295,7 +298,7 @@ namespace CRM.WinForms.Forms
             {
                 Dock = DockStyle.Right,
                 Width = 360,
-                CornerRadius = 12,
+                CornerRadius = 14,
                 Padding = new Padding(20, 16, 20, 16)
             };
 
@@ -323,7 +326,7 @@ namespace CRM.WinForms.Forms
             var cardTable = new DashboardCard
             {
                 Dock = DockStyle.Fill,
-                CornerRadius = 12,
+                CornerRadius = 14,
                 Padding = new Padding(20, 16, 20, 16)
             };
 
@@ -519,7 +522,19 @@ namespace CRM.WinForms.Forms
                 }
             };
 
-            page.Controls.Add(_dgvCustomers);
+            var cardCustTable = new DashboardCard
+            {
+                Dock = DockStyle.Fill,
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
+                Padding = new Padding(16),
+                Margin = new Padding(0, 12, 0, 0)
+            };
+            cardCustTable.Controls.Add(_dgvCustomers);
+
+            page.Controls.Add(cardCustTable);
             page.Controls.Add(toolbar);
             return page;
         }

@@ -61,30 +61,45 @@ namespace CRM.UI.Controls
             _logoArea = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 72,
+                Height = 76,
                 BackColor = Colors.SidebarBg
             };
 
-            var logoIcon = new Label
+            _logoArea.Paint += (s, e) =>
             {
-                Text = "🧺",
-                Font = new Font(Typography.Family, 18f),
-                ForeColor = Colors.SidebarTextActive,
-                AutoSize = true,
-                Location = new Point(Spacing.Xl, 18)
-            };
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            var logoText = new Label
-            {
-                Text = "LAUNDRY CRM",
-                Font = Typography.H3,
-                ForeColor = Colors.SidebarTextActive,
-                AutoSize = true,
-                Location = new Point(Spacing.Xl + 38, 24)
-            };
+                // Subtle bottom divider
+                using var divPen = new Pen(Colors.SidebarDivider, 1f);
+                g.DrawLine(divPen, 0, _logoArea.Height - 1, _logoArea.Width, _logoArea.Height - 1);
 
-            _logoArea.Controls.Add(logoIcon);
-            _logoArea.Controls.Add(logoText);
+                // Modern logo icon badge
+                var iconRect = new Rectangle(Spacing.Xl, 16, 42, 42);
+                using var path = DashboardCard.GetRoundedPath(iconRect, 10);
+                using var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    iconRect,
+                    Color.FromArgb(93, 173, 226),
+                    Color.FromArgb(52, 152, 219),
+                    System.Drawing.Drawing2D.LinearGradientMode.ForwardDiagonal);
+                g.FillPath(brush, path);
+
+                // Laundry emblem inside badge
+                using var whitePen = new Pen(Color.White, 2f);
+                g.DrawEllipse(whitePen, iconRect.X + 11, iconRect.Y + 11, 20, 20);
+                g.DrawEllipse(whitePen, iconRect.X + 16, iconRect.Y + 16, 10, 10);
+                using var dotBrush = new SolidBrush(Color.White);
+                g.FillEllipse(dotBrush, iconRect.X + 13, iconRect.Y + 7, 4, 4);
+
+                // Brand titles
+                using var fontTitle = new Font(Typography.Family, 11f, FontStyle.Bold);
+                using var fontSub = new Font(Typography.Family, 7.5f, FontStyle.Bold);
+                using var titleBrush = new SolidBrush(Colors.SidebarTextActive);
+                using var subBrush = new SolidBrush(Colors.SidebarTextMuted);
+
+                g.DrawString("LAUNDRY CRM", fontTitle, titleBrush, Spacing.Xl + 50, 18);
+                g.DrawString("ENTERPRISE CLOUD", fontSub, subBrush, Spacing.Xl + 50, 38);
+            };
 
             // ── Bottom area ───────────────────────────────────
             _bottomArea = new Panel

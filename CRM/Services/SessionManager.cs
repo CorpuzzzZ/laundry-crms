@@ -22,23 +22,39 @@ namespace CRM.WinForms.Services
         public bool IsManager => Array.Exists(Roles, r => r.Equals("Manager", StringComparison.OrdinalIgnoreCase));
         public bool IsCrew => Array.Exists(Roles, r => r.Equals("Crew", StringComparison.OrdinalIgnoreCase));
 
-        // Module Access Permissions
-        // Super Admin has NO access to:
-        // 1. Branch Management
-        // 2. Service Management
-        // 3. User Management
-        // 4. Customer Management
-        // 5. Loyalty Management
-        // 6. Order Management
-        public bool CanAccessBranches => !IsSuperAdmin && IsAdmin;
-        public bool CanAccessServices => !IsSuperAdmin && (IsAdmin || IsManager);
-        public bool CanAccessUsers => !IsSuperAdmin && IsAdmin;
-        public bool CanAccessCustomers => !IsSuperAdmin;
-        public bool CanAccessLoyalty => !IsSuperAdmin;
-        public bool CanAccessOrders => !IsSuperAdmin && (IsAdmin || IsManager || IsCrew);
+        public CRM.WinForms.Models.AvailedSubscriptionModel? AvailedSubscription { get; set; }
+
+        // Module Access Permissions gated by Role and Subscription Plan
+        public bool CanAccessBranches => !IsSuperAdmin && IsAdmin && (AvailedSubscription?.CanAccessBranches ?? true);
+        public bool CanAccessServices => !IsSuperAdmin && (IsAdmin || IsManager) && (AvailedSubscription?.CanAccessServices ?? true);
+        public bool CanAccessUsers => !IsSuperAdmin && IsAdmin && (AvailedSubscription?.CanAccessUsers ?? true);
+        public bool CanAccessCustomers => !IsSuperAdmin && (AvailedSubscription?.CanAccessCustomers ?? true);
+        public bool CanAccessLoyalty => !IsSuperAdmin && (AvailedSubscription?.CanAccessLoyalty ?? true);
+        public bool CanAccessOrders => !IsSuperAdmin && (IsAdmin || IsManager || IsCrew) && (AvailedSubscription?.CanAccessOrders ?? true);
+
+        // Reports: SuperAdmin has access; Crew does not; Admin/Manager access is gated by Plan (Plan 2 has NO Reports)
+        public bool CanAccessReports
+        {
+            get
+            {
+                if (IsSuperAdmin) return true;
+                if (IsCrew) return false;
+                if (AvailedSubscription != null) return AvailedSubscription.CanAccessReports;
+                return true;
+            }
+        }
 
         // Orders: Admin is READ-ONLY. Manager + Crew can create/edit/delete/change-status.
         public bool CanModifyOrders => !IsSuperAdmin && (IsManager || IsCrew);
+
+        // Subscription: SuperAdmin manages all; Admin can view their availed subscription plan.
+        public bool CanAccessSubscription => IsSuperAdmin || IsAdmin;
+
+        // Terms: SuperAdmin, Admin, Manager, and Crew can access terms.
+        public bool CanAccessTerms => true;
+
+        // Terms modification: Admin can create/edit/delete their company's terms; Crew can only view.
+        public bool CanModifyTerms => IsSuperAdmin || IsAdmin;
     }
 
     public static class SessionManager

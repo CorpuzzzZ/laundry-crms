@@ -48,9 +48,9 @@ namespace CRM.UI.Controls
         public bool IsArchived { get; set; } = false;
 
         // Layout constants
-        private const int CornerRadius = 8;
-        private const int CardPadding = 16;
-        private const int AvatarSize = 44;
+        private const int CornerRadius = 14;
+        private const int CardPadding = 20;
+        private const int AvatarSize = 48;
 
         public CustomerCard()
         {
@@ -61,10 +61,10 @@ namespace CRM.UI.Controls
                 ControlStyles.ResizeRedraw,
                 true);
 
-            Height = 96;
+            Height = 104;
             BackColor = Colors.Background;
             Cursor = Cursors.Hand;
-            Margin = new Padding(0, 0, 0, 12);
+            Margin = new Padding(0, 0, 0, 14);
         }
 
         protected override void OnMouseEnter(EventArgs e)

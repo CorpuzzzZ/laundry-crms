@@ -278,8 +278,8 @@ namespace CRM.WinForms.Forms
             var card = new RoundedCard
             {
                 Width = width,
-                Height = 110,
-                CornerRadius = 8,
+                Height = 118,
+                CornerRadius = 14,
                 FillColor = fillColor,
                 BorderColor = Colors.Border,
                 HoverBorderColor = hoverBorder,
@@ -287,8 +287,8 @@ namespace CRM.WinForms.Forms
                 AccentWidth = 4,
                 EnableHover = true,
                 ShowShadow = true,
-                Margin = new Padding(0, 0, 0, 12),
-                Padding = new Padding(20, 14, 20, 14),
+                Margin = new Padding(0, 0, 0, 14),
+                Padding = new Padding(24, 16, 24, 16),
                 Cursor = Cursors.Hand
             };
 
@@ -298,17 +298,17 @@ namespace CRM.WinForms.Forms
                 Font = Typography.H3,
                 ForeColor = nameColor,
                 AutoSize = true,
-                Location = new Point(20, 14),
+                Location = new Point(24, 16),
                 BackColor = Color.Transparent
             });
 
             card.Controls.Add(new Label
             {
-                Text = $"{user.Email}  |  {user.Role}",
+                Text = $"{user.Email}  •  {user.Role}",
                 Font = Typography.Small,
                 ForeColor = Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(20, 40),
+                Location = new Point(24, 42),
                 BackColor = Color.Transparent
             });
 
@@ -316,75 +316,60 @@ namespace CRM.WinForms.Forms
             {
                 card.Controls.Add(new Label
                 {
-                    Text = user.PhoneNumber,
+                    Text = "📞 " + user.PhoneNumber,
                     Font = Typography.Small,
                     ForeColor = Colors.TextMuted,
                     AutoSize = true,
-                    Location = new Point(20, 62),
+                    Location = new Point(24, 64),
                     BackColor = Color.Transparent
                 });
             }
 
             card.Controls.Add(new Label
             {
-                Text = user.BranchSummary,
+                Text = "🏢 " + user.BranchSummary,
                 Font = Typography.Small,
                 ForeColor = user.BranchNames.Count == 0 ? Colors.TextMuted : Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(20, 84),
+                Location = new Point(24, string.IsNullOrWhiteSpace(user.PhoneNumber) ? 64 : 86),
                 BackColor = Color.Transparent
             });
 
             // Status badge (Archived / Active / Inactive)
-            string badgeText;
-            Color badgeColor;
-            if (isArchived)
-            {
-                badgeText = "Archived";
-                badgeColor = Colors.TextMuted;
-            }
-            else if (user.IsActive)
-            {
-                badgeText = "Active";
-                badgeColor = Colors.Success;
-            }
-            else
-            {
-                badgeText = "Inactive";
-                badgeColor = Colors.TextMuted;
-            }
+            string badgeText = isArchived ? "Archived" : (user.IsActive ? "Active" : "Inactive");
+            Color badgeFg = isArchived ? Colors.TextMuted : (user.IsActive ? Colors.Success : Colors.TextMuted);
+            Color badgeBg = isArchived ? Color.FromArgb(241, 245, 249) : (user.IsActive ? Colors.SuccessLight : Color.FromArgb(241, 245, 249));
 
-            var badge = new Label
+            var badge = new PillBadge
             {
-                Text = badgeText,
-                Font = Typography.Tiny,
-                ForeColor = badgeColor,
-                BackColor = Color.FromArgb(30, badgeColor),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(80, 22),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                BadgeText = badgeText,
+                FillColor = badgeBg,
+                TextColor = badgeFg,
+                Size = new Size(84, 24),
+                CornerRadius = 12,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(card.Width - 108, 16)
             };
-            badge.Location = new Point(card.Width - 100, 16);
             card.Controls.Add(badge);
 
             // Role badge
-            var roleColor = user.Role switch
+            var (roleBg, roleFg) = user.Role switch
             {
-                "Admin" => Colors.Primary,
-                "Manager" => Colors.Warning,
-                _ => Colors.TextSecondary
+                "Admin" => (Color.FromArgb(238, 242, 255), Color.FromArgb(79, 70, 229)),
+                "Manager" => (Color.FromArgb(204, 251, 241), Color.FromArgb(13, 148, 136)),
+                "Crew" => (Color.FromArgb(254, 243, 199), Color.FromArgb(217, 119, 6)),
+                _ => (Color.FromArgb(241, 245, 249), Colors.TextSecondary)
             };
-            var roleBadge = new Label
+            var roleBadge = new PillBadge
             {
-                Text = user.Role,
-                Font = Typography.Tiny,
-                ForeColor = roleColor,
-                BackColor = Color.FromArgb(30, roleColor),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(80, 22),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                BadgeText = user.Role,
+                FillColor = roleBg,
+                TextColor = roleFg,
+                Size = new Size(84, 24),
+                CornerRadius = 12,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(card.Width - 108, 46)
             };
-            roleBadge.Location = new Point(card.Width - 100, 44);
             card.Controls.Add(roleBadge);
 
             EventHandler onClick = (s, e) => OpenEditView(user.Id);

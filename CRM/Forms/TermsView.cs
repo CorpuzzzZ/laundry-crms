@@ -12,7 +12,8 @@ namespace CRM.WinForms.Forms
 {
     public class TermsView : UserControl
     {
-        private readonly SuperAdminApiService _api = new(ApiClient.Instance);
+        private readonly SuperAdminApiService _superAdminApi = new(ApiClient.Instance);
+        private readonly TenantApiService _tenantApi = new(ApiClient.Instance);
 
         private TextBox _txtSearch = null!;
         private DataGridView _dgvTerms = null!;
@@ -29,23 +30,34 @@ namespace CRM.WinForms.Forms
             Dock = DockStyle.Fill;
             BackColor = Colors.Background;
             Font = Typography.Body;
-            Padding = new Padding(16);
+            Padding = new Padding(24);
 
             var pnlTop = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 64,
+                Height = 74,
                 BackColor = Colors.Surface,
-                Padding = new Padding(16, 12, 16, 12)
+                Padding = new Padding(24, 12, 24, 12)
             };
+            pnlTop.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border, 1f);
+                e.Graphics.DrawLine(pen, 0, pnlTop.Height - 1, pnlTop.Width, pnlTop.Height - 1);
+            };
+
+            var user = SessionManager.CurrentUser;
+            bool canModify = user?.IsSuperAdmin == true || user?.IsAdmin == true;
+            bool isSuperAdmin = user?.IsSuperAdmin == true;
 
             var lblTitle = new Label
             {
-                Text = "Terms & Conditions Management",
+                Text = isSuperAdmin
+                    ? "Platform Terms & Conditions"
+                    : (canModify ? "Company Terms & Conditions" : "Terms & Conditions (Read-Only)"),
                 Font = Typography.H2,
                 ForeColor = Colors.TextPrimary,
                 AutoSize = true,
-                Location = new Point(16, 18)
+                Location = new Point(24, 20)
             };
             pnlTop.Controls.Add(lblTitle);
 
@@ -55,14 +67,14 @@ namespace CRM.WinForms.Forms
                 Font = Typography.Small,
                 ForeColor = Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(340, 20)
+                Location = new Point(360, 26)
             };
             pnlTop.Controls.Add(lblSearch);
 
             _txtSearch = new TextBox
             {
-                Location = new Point(390, 16),
-                Width = 180,
+                Location = new Point(416, 22),
+                Width = 200,
                 Font = Typography.Body,
                 BorderStyle = BorderStyle.FixedSingle
             };
@@ -74,7 +86,7 @@ namespace CRM.WinForms.Forms
                 Dock = DockStyle.Right,
                 AutoSize = true,
                 FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(0, 4, 0, 0)
+                Padding = new Padding(0, 16, 0, 0)
             };
 
             var btnNew = new Button
@@ -87,6 +99,7 @@ namespace CRM.WinForms.Forms
                 ForeColor = Color.White,
                 Font = Typography.BodyBold,
                 Cursor = Cursors.Hand,
+                Visible = canModify,
                 Margin = new Padding(0, 0, 8, 0)
             };
             btnNew.FlatAppearance.BorderSize = 0;
@@ -122,6 +135,7 @@ namespace CRM.WinForms.Forms
                 ForeColor = Colors.TextPrimary,
                 Font = Typography.Body,
                 Cursor = Cursors.Hand,
+                Visible = canModify,
                 Margin = new Padding(0, 0, 8, 0)
             };
             btnEdit.FlatAppearance.BorderColor = Colors.Border;
@@ -148,6 +162,7 @@ namespace CRM.WinForms.Forms
                 ForeColor = Colors.Danger,
                 Font = Typography.Body,
                 Cursor = Cursors.Hand,
+                Visible = canModify,
                 Margin = new Padding(0, 0, 8, 0)
             };
             btnDelete.FlatAppearance.BorderColor = Colors.Border;
@@ -159,7 +174,10 @@ namespace CRM.WinForms.Forms
                     "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (res == DialogResult.Yes)
                 {
-                    await _api.DeleteTermsAsync(sel.TermsId);
+                    if (SessionManager.CurrentUser?.IsSuperAdmin == true)
+                        await _superAdminApi.DeleteTermsAsync(sel.TermsId);
+                    else
+                        await _tenantApi.DeleteTenantTermsAsync(sel.TermsId);
                     await LoadTermsAsync();
                 }
             };
@@ -182,11 +200,15 @@ namespace CRM.WinForms.Forms
             pnlButtons.Controls.AddRange(new Control[] { btnNew, btnView, btnEdit, btnDelete, btnRefresh });
             pnlTop.Controls.Add(pnlButtons);
 
-            var pnlGrid = new Panel
+            var pnlGrid = new CRM.UI.Controls.DashboardCard
             {
                 Dock = DockStyle.Fill,
-                BackColor = Colors.Surface,
-                Padding = new Padding(16)
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
+                Padding = new Padding(16),
+                Margin = new Padding(0, 16, 0, 0)
             };
 
             _dgvTerms = new DataGridView
@@ -244,7 +266,11 @@ namespace CRM.WinForms.Forms
 
         private async Task LoadTermsAsync()
         {
-            _terms = await _api.GetTermsAsync();
+            if (SessionManager.CurrentUser?.IsSuperAdmin == true)
+                _terms = await _superAdminApi.GetTermsAsync();
+            else
+                _terms = await _tenantApi.GetTenantTermsAsync();
+
             FilterTerms();
         }
 

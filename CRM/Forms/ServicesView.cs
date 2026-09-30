@@ -355,8 +355,8 @@ namespace CRM.WinForms.Forms
             var card = new RoundedCard
             {
                 Width = width,
-                Height = 100,
-                CornerRadius = 8,
+                Height = 108,
+                CornerRadius = 14,
                 FillColor = fillColor,
                 BorderColor = Colors.Border,
                 HoverBorderColor = hoverBorder,
@@ -364,8 +364,8 @@ namespace CRM.WinForms.Forms
                 AccentWidth = 4,
                 EnableHover = true,
                 ShowShadow = true,
-                Margin = new Padding(0, 0, 0, 12),
-                Padding = new Padding(20, 14, 20, 14),
+                Margin = new Padding(0, 0, 0, 14),
+                Padding = new Padding(24, 16, 24, 16),
                 Cursor = Cursors.Hand
             };
 
@@ -376,7 +376,7 @@ namespace CRM.WinForms.Forms
                 Font = Typography.H3,
                 ForeColor = nameColor,
                 AutoSize = true,
-                Location = new Point(20, 14),
+                Location = new Point(24, 16),
                 BackColor = Color.Transparent
             });
 
@@ -387,7 +387,7 @@ namespace CRM.WinForms.Forms
                 Font = Typography.Small,
                 ForeColor = Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(20, 40),
+                Location = new Point(24, 44),
                 BackColor = Color.Transparent
             });
 
@@ -398,61 +398,58 @@ namespace CRM.WinForms.Forms
                 Font = Typography.H3,
                 ForeColor = Colors.Primary,
                 AutoSize = true,
-                Location = new Point(20, 64),
+                Location = new Point(24, 70),
                 BackColor = Color.Transparent
             });
-            // Status badge (top-right)
-            string badgeText;
-            Color badgeColor;
-            if (isArchived) { badgeText = "Archived"; badgeColor = Colors.TextMuted; }
-            else if (service.IsActive) { badgeText = "Active"; badgeColor = Colors.Success; }
-            else { badgeText = "Inactive"; badgeColor = Colors.TextMuted; }
 
-            var badge = new Label
+            // Status badge (top-right)
+            string badgeText = isArchived ? "Archived" : (service.IsActive ? "Active" : "Inactive");
+            Color badgeFg = isArchived ? Colors.TextMuted : (service.IsActive ? Colors.Success : Colors.TextMuted);
+            Color badgeBg = isArchived ? Color.FromArgb(241, 245, 249) : (service.IsActive ? Colors.SuccessLight : Color.FromArgb(241, 245, 249));
+
+            var badge = new PillBadge
             {
-                Text = badgeText,
-                Font = Typography.Tiny,
-                ForeColor = badgeColor,
-                BackColor = Color.FromArgb(30, badgeColor),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(80, 22),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                BadgeText = badgeText,
+                FillColor = badgeBg,
+                TextColor = badgeFg,
+                Size = new Size(84, 24),
+                CornerRadius = 12,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(card.Width - 108, 16)
             };
-            badge.Location = new Point(card.Width - 100, 16);
             card.Controls.Add(badge);
 
             // Type badge for Chemical / Machine
             if (service.ServiceType != 1)
             {
-                var typeColor = service.ServiceType == 2 ? Colors.Warning : Colors.Primary;
-                var typeBadge = new Label
+                var typeFg = service.ServiceType == 2 ? Colors.Warning : Colors.Primary;
+                var typeBg = service.ServiceType == 2 ? Colors.WarningLight : Colors.PrimaryLight;
+                var typeBadge = new PillBadge
                 {
-                    Text = service.TypeBadge,
-                    Font = Typography.Tiny,
-                    ForeColor = typeColor,
-                    BackColor = Color.FromArgb(30, typeColor),
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    Size = new Size(80, 22),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right
+                    BadgeText = service.TypeBadge,
+                    FillColor = typeBg,
+                    TextColor = typeFg,
+                    Size = new Size(84, 24),
+                    CornerRadius = 12,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                    Location = new Point(card.Width - 108, 46)
                 };
-                typeBadge.Location = new Point(card.Width - 100, 44);
                 card.Controls.Add(typeBadge);
             }
 
             // Express badge if applicable
             if (service.IsExpressService && !isArchived)
             {
-                var expressBadge = new Label
+                var expressBadge = new PillBadge
                 {
-                    Text = "Express",
-                    Font = Typography.Tiny,
-                    ForeColor = Colors.Warning,
-                    BackColor = Color.FromArgb(30, Colors.Warning),
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    Size = new Size(80, 22),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right
+                    BadgeText = "Express",
+                    FillColor = Colors.WarningLight,
+                    TextColor = Colors.Warning,
+                    Size = new Size(84, 24),
+                    CornerRadius = 12,
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                    Location = new Point(card.Width - 108, 46)
                 };
-                expressBadge.Location = new Point(card.Width - 100, 44);
                 card.Controls.Add(expressBadge);
             }
 

@@ -69,48 +69,51 @@ namespace CRM.WinForms.Forms
         private void AddCard(string icon, string title, string value, Color color,
             int index, int width, int height, int spacing)
         {
-            var card = new Panel
+            var card = new CRM.UI.Controls.RoundedCard
             {
                 Size = new Size(width, height),
                 Location = new Point(index * (width + spacing), 0),
-                BackColor = Color.White
-            };
-
-            // Colored top border
-            var topBar = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 6,
-                BackColor = color
+                CornerRadius = 14,
+                FillColor = CRM.UI.Colors.Surface,
+                BorderColor = CRM.UI.Colors.Border,
+                HoverBorderColor = color,
+                AccentColor = color,
+                AccentWidth = 4,
+                EnableHover = true,
+                ShowShadow = true,
+                Padding = new Padding(20, 16, 20, 16)
             };
 
             var lblIcon = new Label
             {
                 Text = icon,
-                Font = new Font("Segoe UI", 24F),
-                Location = new Point(15, 15),
-                AutoSize = true
+                Font = new Font("Segoe UI", 22F),
+                Location = new Point(18, 18),
+                AutoSize = true,
+                BackColor = Color.Transparent
             };
 
             var lblTitle = new Label
             {
                 Text = title,
-                Font = new Font("Segoe UI", 10F),
-                ForeColor = Theme.TextLightColor,
-                Location = new Point(60, 20),
-                AutoSize = true
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+                ForeColor = CRM.UI.Colors.TextSecondary,
+                Location = new Point(68, 20),
+                AutoSize = true,
+                BackColor = Color.Transparent
             };
 
             var lblValue = new Label
             {
                 Text = value,
-                Font = new Font("Segoe UI", 22F, FontStyle.Bold),
-                ForeColor = Theme.TextDarkColor,
-                Location = new Point(60, 50),
-                AutoSize = true
+                Font = new Font("Segoe UI", 20F, FontStyle.Bold),
+                ForeColor = CRM.UI.Colors.TextPrimary,
+                Location = new Point(68, 48),
+                AutoSize = true,
+                BackColor = Color.Transparent
             };
 
-            card.Controls.AddRange(new Control[] { lblValue, lblTitle, lblIcon, topBar });
+            card.Controls.AddRange(new Control[] { lblValue, lblTitle, lblIcon });
             pnlCards.Controls.Add(card);
         }
     }

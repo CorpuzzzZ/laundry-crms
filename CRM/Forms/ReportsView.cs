@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using CRM.UI;
+using CRM.UI.Controls;
 using CRM.WinForms.Models;
 using CRM.WinForms.Services;
 
@@ -49,11 +50,14 @@ namespace CRM.WinForms.Forms
             Padding = new Padding(16);
 
             // ===== Left sidebar =====
-            var sidebar = new Panel
+            var sidebar = new DashboardCard
             {
                 Dock = DockStyle.Left,
-                Width = 220,
-                BackColor = Colors.Surface,
+                Width = 230,
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
                 Padding = new Padding(12)
             };
 
@@ -61,7 +65,7 @@ namespace CRM.WinForms.Forms
             {
                 Text = "REPORTS",
                 Dock = DockStyle.Top,
-                Height = 28,
+                Height = 32,
                 Font = Typography.SmallBold,
                 ForeColor = Colors.TextSecondary
             };
@@ -74,7 +78,9 @@ namespace CRM.WinForms.Forms
                 Font = Typography.Body,
                 BackColor = Colors.Surface,
                 ForeColor = Colors.TextBody,
-                IntegralHeight = false
+                IntegralHeight = false,
+                ItemHeight = 36,
+                DrawMode = DrawMode.OwnerDrawFixed
             };
             _lstReports.Items.Add("Daily Sales");
             _lstReports.Items.Add("Sales by Service");
@@ -82,12 +88,37 @@ namespace CRM.WinForms.Forms
             _lstReports.Items.Add("Order Status Breakdown");
             _lstReports.Items.Add("Peak Hours");
             _lstReports.SelectedIndex = 0;
+            _lstReports.DrawItem += (s, e) =>
+            {
+                if (e.Index < 0) return;
+                bool isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+                var r = new Rectangle(e.Bounds.Left + 2, e.Bounds.Top + 2, e.Bounds.Width - 4, e.Bounds.Height - 4);
+                using (var path = DashboardCard.GetRoundedPath(r, 8))
+                {
+                    using var bg = new SolidBrush(isSelected ? Colors.PrimaryLight : Colors.Surface);
+                    g.FillPath(bg, path);
+                    if (isSelected)
+                    {
+                        using var pen = new Pen(Color.FromArgb(191, 219, 254), 1f);
+                        g.DrawPath(pen, path);
+                    }
+                }
+
+                string text = _lstReports.Items[e.Index].ToString() ?? "";
+                using var font = isSelected ? Typography.BodyBold : Typography.Body;
+                using var brush = new SolidBrush(isSelected ? Colors.Primary : Colors.TextPrimary);
+                g.DrawString(text, font, brush, r.Left + 12, r.Top + 8);
+            };
             _lstReports.SelectedIndexChanged += async (s, e) =>
             {
                 var keys = new[] { "daily-sales", "sales-by-service", "sales-by-payment-method", "order-status", "peak-hours" };
                 if (_lstReports.SelectedIndex >= 0 && _lstReports.SelectedIndex < keys.Length)
                 {
                     _currentKey = keys[_lstReports.SelectedIndex];
+                    _lblTitle.Text = _lstReports.Items[_lstReports.SelectedIndex].ToString();
                     await LoadAsync();
                 }
             };
@@ -186,35 +217,38 @@ namespace CRM.WinForms.Forms
             header.Controls.Add(_btnExport);
 
             // Summary label
-            var summaryHost = new Panel
+            var summaryHost = new DashboardCard
             {
                 Dock = DockStyle.Top,
-                Height = 42,
-                BackColor = Colors.Surface,
-                Padding = new Padding(14, 10, 14, 10)
-            };
-            summaryHost.Paint += (s, e) =>
-            {
-                using var pen = new Pen(Colors.Border);
-                e.Graphics.DrawRectangle(pen, 0, 0, summaryHost.Width - 1, summaryHost.Height - 1);
+                Height = 44,
+                CornerRadius = 10,
+                FillColor = Color.FromArgb(239, 246, 255),
+                BorderColor = Color.FromArgb(191, 219, 254),
+                ShowShadow = false,
+                Padding = new Padding(16, 10, 16, 10)
             };
 
             _lblSummary = new Label
             {
                 Text = "Loading...",
                 Dock = DockStyle.Fill,
-                Font = Typography.Body,
-                ForeColor = Colors.TextPrimary
+                Font = Typography.BodyBold,
+                ForeColor = Colors.Primary,
+                BackColor = Color.Transparent
             };
             summaryHost.Controls.Add(_lblSummary);
 
             // Chart panel
-            var chartHost = new Panel
+            var chartHost = new DashboardCard
             {
                 Dock = DockStyle.Top,
-                Height = 220,
-                BackColor = Colors.Background,
-                Padding = new Padding(0, 12, 0, 0)
+                Height = 230,
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
+                Padding = new Padding(12),
+                Margin = new Padding(0, 10, 0, 10)
             };
 
             _plot = new ScottPlot.WinForms.FormsPlot
@@ -225,11 +259,15 @@ namespace CRM.WinForms.Forms
             chartHost.Controls.Add(_plot);
 
             // Grid
-            var gridHost = new Panel
+            var gridHost = new DashboardCard
             {
                 Dock = DockStyle.Fill,
-                BackColor = Colors.Background,
-                Padding = new Padding(0, 12, 0, 0)
+                CornerRadius = 14,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = true,
+                Padding = new Padding(12),
+                Margin = new Padding(0, 10, 0, 0)
             };
 
             _dgvData = new DataGridView

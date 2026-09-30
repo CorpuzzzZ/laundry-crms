@@ -9,7 +9,8 @@ namespace CRM.WinForms.Forms
 {
     public class TermsEditDialog : Form
     {
-        private readonly SuperAdminApiService _api = new(ApiClient.Instance);
+        private readonly SuperAdminApiService _superAdminApi = new(ApiClient.Instance);
+        private readonly TenantApiService _tenantApi = new(ApiClient.Instance);
         private readonly TermsModel? _existing;
 
         private TextBox txtVersion = null!;
@@ -258,7 +259,11 @@ namespace CRM.WinForms.Forms
                     IsMandatory = chkMandatory.Checked
                 };
 
-                var created = await _api.CreateTermsAsync(req);
+                bool isSuperAdmin = SessionManager.CurrentUser?.IsSuperAdmin == true;
+                var created = isSuperAdmin
+                    ? await _superAdminApi.CreateTermsAsync(req)
+                    : await _tenantApi.CreateTenantTermsAsync(req);
+
                 if (created != null)
                 {
                     SavedTerms = created;
@@ -287,7 +292,11 @@ namespace CRM.WinForms.Forms
                     IsMandatory = chkMandatory.Checked
                 };
 
-                var updated = await _api.UpdateTermsAsync(_existing.TermsId, req);
+                bool isSuperAdmin = SessionManager.CurrentUser?.IsSuperAdmin == true;
+                var updated = isSuperAdmin
+                    ? await _superAdminApi.UpdateTermsAsync(_existing.TermsId, req)
+                    : await _tenantApi.UpdateTenantTermsAsync(_existing.TermsId, req);
+
                 if (updated != null)
                 {
                     SavedTerms = updated;

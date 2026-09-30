@@ -99,21 +99,29 @@ namespace CRM.UI.Controls
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Background
-            Color bg = IsActive ? Colors.SidebarActive
-                     : _hover   ? Colors.SidebarHover
-                     :            Colors.SidebarBg;
-            using (var brush = new SolidBrush(bg))
-                g.FillRectangle(brush, ClientRectangle);
+            // Clear background
+            using (var bgBrush = new SolidBrush(Colors.SidebarBg))
+                g.FillRectangle(bgBrush, ClientRectangle);
 
-            // Left accent bar (active only)
-            if (IsActive)
+            // Floating rounded pill for hover/active states
+            if (IsActive || _hover)
             {
-                using var accent = new SolidBrush(Colors.SidebarAccent);
-                g.FillRectangle(accent, 0, 0, 4, Height);
+                var pillRect = new Rectangle(10, 3, Width - 20, Height - 6);
+                using var pillPath = DashboardCard.GetRoundedPath(pillRect, 8);
+                Color pillColor = IsActive ? Colors.SidebarActive : Colors.SidebarHover;
+                using var pillBrush = new SolidBrush(pillColor);
+                g.FillPath(pillBrush, pillPath);
+
+                if (IsActive)
+                {
+                    // Subtle left indicator bar inside pill
+                    using var accentBrush = new SolidBrush(Colors.SidebarAccent);
+                    using var indPath = DashboardCard.GetRoundedPath(new Rectangle(12, 11, 3, Height - 22), 2);
+                    g.FillPath(accentBrush, indPath);
+                }
             }
 
-            var fg = IsActive ? Colors.SidebarTextActive : Colors.SidebarText;
+            var fg = IsActive ? Colors.SidebarTextActive : (_hover ? Color.White : Colors.SidebarText);
             var font = IsActive ? Typography.BodyBold : Typography.Body;
 
             // Icon area (left, 24px wide)

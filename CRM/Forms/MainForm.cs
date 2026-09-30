@@ -13,12 +13,25 @@ namespace CRM.WinForms.Forms
         private Panel _topBar = null!;
         private Sidebar _sidebar = null!;
         private Panel _content = null!; 
-
-
         private Panel _contentBody = null!;
         private Label _pageTitle = null!;
-        private Label _userInfo = null!;
-        private Label _roleInfo = null!;
+
+        // TopBar Modern SaaS Elements
+        private Panel _pnlTenantBadge = null!;
+        private Panel _pnlCloudStatus = null!;
+        private Panel _pnlDateBadge = null!;
+        private Panel _pnlUserProfile = null!;
+        private Button _btnLogoutTop = null!;
+        private Label _lblUserName = null!;
+        private Label _lblUserRole = null!;
+        private Panel _pnlAvatar = null!;
+
+        private string _userInitials = "U";
+        private Color _userRoleColor = Color.FromArgb(52, 152, 219);
+        private string _tenantName = "👑 Master Platform (Central Cloud)";
+        private Color _tenantBgColor = Color.FromArgb(238, 242, 255);
+        private Color _tenantBorderColor = Color.FromArgb(199, 210, 254);
+        private Color _tenantTextColor = Color.FromArgb(67, 56, 202);
 
         public MainForm()
         {
@@ -61,78 +74,298 @@ namespace CRM.WinForms.Forms
             {
                 if (SessionManager.CurrentUser != null)
                 {
-                    var u = SessionManager.CurrentUser;
-                    _userInfo.Text = u.FullName;
-                    _roleInfo.Text = u.PrimaryRole;
-                    _sidebar.SetUser(u.FullName, u.PrimaryRole);
+                    ApplySessionUser(SessionManager.CurrentUser);
                 }
                 NavigateTo("dashboard");
             };
         }
 
         // ============================================================
-        // TOP BAR - lives INSIDE _content, docks at top of content area
+        // TOP BAR - Modern Executive SaaS Header
         // ============================================================
         private void BuildTopBar()
         {
             _topBar = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 64,
+                Height = 70,
                 BackColor = Colors.Surface,
-                Padding = new Padding(Spacing.Xl, 0, Spacing.Xl, 0)
+                Padding = new Padding(0)
             };
 
-            // Bottom border
+            // Bottom subtle divider
             _topBar.Paint += (s, e) =>
             {
-                using var pen = new Pen(Colors.Border);
+                using var pen = new Pen(Colors.Border, 1f);
                 e.Graphics.DrawLine(pen, 0, _topBar.Height - 1, _topBar.Width, _topBar.Height - 1);
             };
 
+            // 1. Page Title
             _pageTitle = new Label
             {
                 Text = "Dashboard",
-                Font = Typography.H1,
+                Font = new Font("Segoe UI", 16f, FontStyle.Bold),
                 ForeColor = Colors.TextPrimary,
                 AutoSize = true,
-                Location = new Point(Spacing.Xl, 16)
+                Location = new Point(24, 18)
+            };
+            _pageTitle.TextChanged += (s, e) => UpdateTopBarLayout();
+
+            // 2. Active Tenant / Enterprise Database Pill Badge
+            _pnlTenantBadge = new Panel
+            {
+                Size = new Size(260, 32),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Default
+            };
+            _pnlTenantBadge.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, _pnlTenantBadge.Width - 1, _pnlTenantBadge.Height - 1);
+                using var path = DashboardCard.GetRoundedPath(r, 6);
+                using var bg = new SolidBrush(_tenantBgColor);
+                using var borderPen = new Pen(_tenantBorderColor, 1f);
+                using var textBrush = new SolidBrush(_tenantTextColor);
+                using var fontBold = new Font("Segoe UI", 9f, FontStyle.Bold);
+                g.FillPath(bg, path);
+                g.DrawPath(borderPen, path);
+                g.DrawString(_tenantName, fontBold, textBrush, 10, 7);
             };
 
-            _userInfo = new Label
+            // 3. Cloud Server Status Badge
+            _pnlCloudStatus = new Panel
+            {
+                Size = new Size(160, 34),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Default
+            };
+            _pnlCloudStatus.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, _pnlCloudStatus.Width - 1, _pnlCloudStatus.Height - 1);
+                using var path = DashboardCard.GetRoundedPath(r, 6);
+                using var bg = new SolidBrush(Color.FromArgb(248, 250, 252));
+                using var borderPen = new Pen(Colors.Border, 1f);
+                g.FillPath(bg, path);
+                g.DrawPath(borderPen, path);
+
+                // Online green dot
+                using var dotBrush = new SolidBrush(Color.FromArgb(39, 174, 96));
+                g.FillEllipse(dotBrush, 12, 13, 8, 8);
+
+                using var font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+                using var textBrush = new SolidBrush(Colors.TextPrimary);
+                g.DrawString("MonsterASP Cloud", font, textBrush, 26, 9);
+            };
+
+            // 4. Live Date Chip
+            _pnlDateBadge = new Panel
+            {
+                Size = new Size(130, 34),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Default
+            };
+            _pnlDateBadge.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, _pnlDateBadge.Width - 1, _pnlDateBadge.Height - 1);
+                using var path = DashboardCard.GetRoundedPath(r, 6);
+                using var bg = new SolidBrush(Color.FromArgb(248, 250, 252));
+                using var borderPen = new Pen(Colors.Border, 1f);
+                g.FillPath(bg, path);
+                g.DrawPath(borderPen, path);
+
+                using var font = new Font("Segoe UI", 8.5f, FontStyle.Regular);
+                using var textBrush = new SolidBrush(Colors.TextSecondary);
+                g.DrawString($"📅  {DateTime.Now:MMM dd, yyyy}", font, textBrush, 10, 9);
+            };
+
+            // 5. User Profile Card
+            _pnlUserProfile = new Panel
+            {
+                Size = new Size(190, 44),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Default
+            };
+            _pnlUserProfile.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var r = new Rectangle(0, 0, _pnlUserProfile.Width - 1, _pnlUserProfile.Height - 1);
+                using var path = DashboardCard.GetRoundedPath(r, 8);
+                using var bg = new SolidBrush(Color.FromArgb(250, 252, 255));
+                using var borderPen = new Pen(Colors.Border, 1f);
+                g.FillPath(bg, path);
+                g.DrawPath(borderPen, path);
+            };
+
+            _pnlAvatar = new Panel
+            {
+                Size = new Size(32, 32),
+                Location = new Point(6, 6),
+                BackColor = Color.Transparent
+            };
+            _pnlAvatar.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var avatarBrush = new SolidBrush(_userRoleColor);
+                g.FillEllipse(avatarBrush, 0, 0, 31, 31);
+
+                using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
+                var sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                g.DrawString(_userInitials, font, Brushes.White, new RectangleF(0, 0, 32, 32), sf);
+            };
+
+            _lblUserName = new Label
             {
                 Text = "User",
-                Font = Typography.BodyBold,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
                 ForeColor = Colors.TextPrimary,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleRight,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Size = new Size(220, 20)
+                Location = new Point(44, 5),
+                Size = new Size(138, 17),
+                AutoEllipsis = true
             };
 
-            _roleInfo = new Label
+            _lblUserRole = new Label
             {
-                Text = "",
-                Font = Typography.Small,
-                ForeColor = Colors.TextSecondary,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleRight,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Size = new Size(220, 18)
+                Text = "ROLE",
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+                ForeColor = _userRoleColor,
+                Location = new Point(44, 22),
+                Size = new Size(138, 16),
+                AutoEllipsis = true
             };
+
+            _pnlUserProfile.Controls.Add(_pnlAvatar);
+            _pnlUserProfile.Controls.Add(_lblUserName);
+            _pnlUserProfile.Controls.Add(_lblUserRole);
+
+            // 6. Sign Out Button
+            _btnLogoutTop = new Button
+            {
+                Size = new Size(36, 36),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Color.FromArgb(120, 130, 145),
+                Text = "⎋",
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            _btnLogoutTop.FlatAppearance.BorderSize = 1;
+            _btnLogoutTop.FlatAppearance.BorderColor = Colors.Border;
+            _btnLogoutTop.FlatAppearance.MouseOverBackColor = Color.FromArgb(254, 242, 242);
+            _btnLogoutTop.FlatAppearance.MouseDownBackColor = Color.FromArgb(254, 226, 226);
+            _btnLogoutTop.Click += (s, e) => Logout();
+
+            var toolTip = new ToolTip();
+            toolTip.SetToolTip(_btnLogoutTop, "Sign out of workspace");
 
             _topBar.Controls.Add(_pageTitle);
-            _topBar.Controls.Add(_userInfo);
-            _topBar.Controls.Add(_roleInfo);
+            _topBar.Controls.Add(_pnlTenantBadge);
+            _topBar.Controls.Add(_pnlCloudStatus);
+            _topBar.Controls.Add(_pnlDateBadge);
+            _topBar.Controls.Add(_pnlUserProfile);
+            _topBar.Controls.Add(_btnLogoutTop);
 
-            _topBar.Resize += (s, e) =>
+            _topBar.Resize += (s, e) => UpdateTopBarLayout();
+            UpdateTopBarLayout();
+        }
+
+        private void UpdateTopBarLayout()
+        {
+            if (_topBar == null || _pageTitle == null || _pnlTenantBadge == null) return;
+
+            _pageTitle.Location = new Point(24, 18);
+            _pnlTenantBadge.Location = new Point(_pageTitle.Right + 14, 19);
+
+            int x = _topBar.ClientSize.Width - 24;
+
+            _btnLogoutTop.Location = new Point(x - _btnLogoutTop.Width, 17);
+            x = _btnLogoutTop.Left - 10;
+
+            _pnlUserProfile.Location = new Point(x - _pnlUserProfile.Width, 13);
+            x = _pnlUserProfile.Left - 10;
+
+            _pnlDateBadge.Location = new Point(x - _pnlDateBadge.Width, 18);
+            x = _pnlDateBadge.Left - 10;
+
+            _pnlCloudStatus.Location = new Point(x - _pnlCloudStatus.Width, 18);
+        }
+
+        private void ApplySessionUser(CurrentUser u)
+        {
+            _lblUserName.Text = u.FullName;
+            _lblUserRole.Text = u.PrimaryRole.ToUpperInvariant();
+            _userInitials = GetInitials(u.FullName);
+
+            if (u.IsSuperAdmin)
             {
-                int rightOffset = Spacing.Xl;
-                _userInfo.Location = new Point(
-                    _topBar.Width - _userInfo.Width - rightOffset, 12);
-                _roleInfo.Location = new Point(
-                    _topBar.Width - _roleInfo.Width - rightOffset, 34);
-            };
+                _userRoleColor = Color.FromArgb(79, 70, 229); // Royal Indigo
+                _tenantName = "👑 Master Platform (Central Cloud)";
+                _tenantBgColor = Color.FromArgb(238, 242, 255);
+                _tenantBorderColor = Color.FromArgb(199, 210, 254);
+                _tenantTextColor = Color.FromArgb(67, 56, 202);
+            }
+            else if (u.CompanyId == 1)
+            {
+                _userRoleColor = u.IsAdmin ? Color.FromArgb(37, 99, 235) : (u.IsManager ? Color.FromArgb(13, 148, 136) : Color.FromArgb(217, 119, 6));
+                _tenantName = "🏢 CRM Solutions Inc. (Tenant 1)";
+                _tenantBgColor = Color.FromArgb(236, 253, 245);
+                _tenantBorderColor = Color.FromArgb(167, 243, 208);
+                _tenantTextColor = Color.FromArgb(4, 120, 87);
+            }
+            else if (u.CompanyId == 2)
+            {
+                _userRoleColor = u.IsAdmin ? Color.FromArgb(37, 99, 235) : (u.IsManager ? Color.FromArgb(13, 148, 136) : Color.FromArgb(217, 119, 6));
+                _tenantName = "🏢 SwiftWash Laundry (Tenant 2)";
+                _tenantBgColor = Color.FromArgb(239, 246, 255);
+                _tenantBorderColor = Color.FromArgb(191, 219, 254);
+                _tenantTextColor = Color.FromArgb(29, 78, 216);
+            }
+            else if (u.CompanyId == 3)
+            {
+                _userRoleColor = u.IsAdmin ? Color.FromArgb(37, 99, 235) : (u.IsManager ? Color.FromArgb(13, 148, 136) : Color.FromArgb(217, 119, 6));
+                _tenantName = "🏢 Sparkle Cleaners (Tenant 3)";
+                _tenantBgColor = Color.FromArgb(250, 245, 255);
+                _tenantBorderColor = Color.FromArgb(233, 213, 255);
+                _tenantTextColor = Color.FromArgb(126, 34, 206);
+            }
+            else
+            {
+                _userRoleColor = Color.FromArgb(52, 152, 219);
+                _tenantName = $"🏢 Company #{u.CompanyId} (Tenant)";
+                _tenantBgColor = Color.FromArgb(241, 245, 249);
+                _tenantBorderColor = Color.FromArgb(203, 213, 225);
+                _tenantTextColor = Color.FromArgb(51, 65, 85);
+            }
+
+            _lblUserRole.ForeColor = _userRoleColor;
+            _sidebar.SetUser(u.FullName, u.PrimaryRole);
+            _pnlAvatar.Invalidate();
+            _pnlTenantBadge.Invalidate();
+            _pnlUserProfile.Invalidate();
+            UpdateTopBarLayout();
+        }
+
+        private static string GetInitials(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return "U";
+            var parts = fullName.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 1)
+            {
+                return parts[0].Length >= 2 
+                    ? parts[0].Substring(0, 2).ToUpperInvariant() 
+                    : parts[0].ToUpperInvariant();
+            }
+            return (parts[0][0].ToString() + parts[parts.Length - 1][0].ToString()).ToUpperInvariant();
         }
 
         // ============================================================
@@ -169,7 +402,7 @@ namespace CRM.WinForms.Forms
                     _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
             }
 
-            if (user?.IsCrew != true)
+            if (user?.CanAccessReports == true)
             {
                 _sidebar.AddSection("Insights");
                 _sidebar.AddItem(SidebarIcon.Reports, "Reports", "reports");
@@ -180,6 +413,15 @@ namespace CRM.WinForms.Forms
                 _sidebar.AddSection("System");
                 _sidebar.AddItem(SidebarIcon.Subscription, "Subscription", "subscription");
                 _sidebar.AddItem(SidebarIcon.Terms, "Terms", "terms");
+            }
+            else
+            {
+                _sidebar.AddSection("Company");
+                if (user?.CanAccessSubscription == true)
+                    _sidebar.AddItem(SidebarIcon.Subscription, "Subscription", "subscription");
+
+                if (user?.CanAccessTerms == true)
+                    _sidebar.AddItem(SidebarIcon.Terms, "Terms", "terms");
             }
         }
 
@@ -245,12 +487,42 @@ namespace CRM.WinForms.Forms
                         return;
                 }
             }
-            else if (pageKey.Equals("subscription", StringComparison.OrdinalIgnoreCase) || 
-                     pageKey.Equals("terms", StringComparison.OrdinalIgnoreCase))
+            else
             {
-                MessageBox.Show("Access Denied: Only Super Admin can access Subscription and Terms management.",
-                    "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                if (pageKey.Equals("subscription", StringComparison.OrdinalIgnoreCase) && user?.CanAccessSubscription != true)
+                {
+                    MessageBox.Show("Access Denied: Only Admin and Super Admin can view Subscription details.",
+                        "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (pageKey.Equals("terms", StringComparison.OrdinalIgnoreCase) && user?.CanAccessTerms != true)
+                {
+                    MessageBox.Show("Access Denied: You do not have access to Terms & Conditions.",
+                        "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (pageKey.Equals("reports", StringComparison.OrdinalIgnoreCase) && user?.CanAccessReports != true)
+                {
+                    MessageBox.Show("Access Denied: Your current subscription plan does not include Reports.",
+                        "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (pageKey.Equals("branches", StringComparison.OrdinalIgnoreCase) && user?.CanAccessBranches != true)
+                {
+                    MessageBox.Show("Access Denied: Your current subscription plan does not include Branch Management.",
+                        "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (pageKey.Equals("loyalty", StringComparison.OrdinalIgnoreCase) && user?.CanAccessLoyalty != true)
+                {
+                    MessageBox.Show("Access Denied: Your current subscription plan does not include Loyalty Management.",
+                        "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
             }
 
             _contentBody.Controls.Clear();
@@ -322,12 +594,22 @@ namespace CRM.WinForms.Forms
                     break;
 
                 case "subscription":
-                    _pageTitle.Text = "Subscription Management";
-                    _contentBody.Controls.Add(new SubscriptionView { Dock = DockStyle.Fill });
+                    if (user?.IsSuperAdmin == true)
+                    {
+                        _pageTitle.Text = "Subscription Management";
+                        _contentBody.Controls.Add(new SubscriptionView { Dock = DockStyle.Fill });
+                    }
+                    else
+                    {
+                        _pageTitle.Text = "My Subscription Plan";
+                        _contentBody.Controls.Add(new AdminSubscriptionView { Dock = DockStyle.Fill });
+                    }
                     break;
 
                 case "terms":
-                    _pageTitle.Text = "Terms & Conditions";
+                    _pageTitle.Text = user?.IsSuperAdmin == true
+                        ? "Platform Terms & Conditions"
+                        : (user?.CanModifyTerms == true ? "Company Terms & Conditions" : "Company Terms & Conditions (Read-Only)");
                     _contentBody.Controls.Add(new TermsView { Dock = DockStyle.Fill });
                     break;
 

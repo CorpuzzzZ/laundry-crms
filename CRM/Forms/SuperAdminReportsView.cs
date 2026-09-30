@@ -85,7 +85,7 @@ namespace CRM.WinForms.Forms
 
                 var item = (ReportMenuItem)_lstReports.Items[e.Index];
                 using var fg = new SolidBrush(isSelected ? Colors.Primary : Colors.TextPrimary);
-                using var font = isSelected ? Typography.BodyBold : Typography.Body;
+                var font = isSelected ? Typography.BodyBold : Typography.Body;
                 g.DrawString(item.Title, font, fg, r.Left + 12, r.Top + 8);
             };
             _lstReports.SelectedIndexChanged += async (s, e) =>

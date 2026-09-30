@@ -259,8 +259,8 @@ namespace CRM.WinForms.Forms
             var card = new RoundedCard
             {
                 Width = width,
-                Height = 132,
-                CornerRadius = 8,
+                Height = 136,
+                CornerRadius = 14,
                 FillColor = fillColor,
                 BorderColor = Colors.Border,
                 HoverBorderColor = hoverBorder,
@@ -268,8 +268,8 @@ namespace CRM.WinForms.Forms
                 AccentWidth = 4,
                 EnableHover = true,
                 ShowShadow = true,
-                Margin = new Padding(0, 0, 0, 12),
-                Padding = new Padding(20, 14, 20, 14),
+                Margin = new Padding(0, 0, 0, 14),
+                Padding = new Padding(24, 16, 24, 16),
                 Cursor = Cursors.Hand
             };
 
@@ -279,7 +279,7 @@ namespace CRM.WinForms.Forms
                 Font = Typography.H3,
                 ForeColor = nameColor,
                 AutoSize = true,
-                Location = new Point(20, 14),
+                Location = new Point(24, 16),
                 BackColor = Color.Transparent
             });
 
@@ -288,11 +288,11 @@ namespace CRM.WinForms.Forms
             if (!string.IsNullOrWhiteSpace(branch.City)) codeParts.Add(branch.City);
             card.Controls.Add(new Label
             {
-                Text = string.Join("  |  ", codeParts),
+                Text = string.Join("  •  ", codeParts),
                 Font = Typography.Small,
                 ForeColor = Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(20, 40),
+                Location = new Point(24, 42),
                 BackColor = Color.Transparent
             });
 
@@ -305,27 +305,27 @@ namespace CRM.WinForms.Forms
             {
                 card.Controls.Add(new Label
                 {
-                    Text = string.Join(", ", addrParts),
+                    Text = "📍 " + string.Join(", ", addrParts),
                     Font = Typography.Small,
                     ForeColor = Colors.TextMuted,
                     AutoSize = true,
-                    Location = new Point(20, 62),
+                    Location = new Point(24, 64),
                     BackColor = Color.Transparent
                 });
             }
 
             var contact = new System.Collections.Generic.List<string>();
-            if (!string.IsNullOrWhiteSpace(branch.Phone)) contact.Add(branch.Phone);
-            if (!string.IsNullOrWhiteSpace(branch.Email)) contact.Add(branch.Email);
+            if (!string.IsNullOrWhiteSpace(branch.Phone)) contact.Add("📞 " + branch.Phone);
+            if (!string.IsNullOrWhiteSpace(branch.Email)) contact.Add("✉ " + branch.Email);
             if (contact.Count > 0)
             {
                 card.Controls.Add(new Label
                 {
-                    Text = string.Join("  |  ", contact),
+                    Text = string.Join("   ", contact),
                     Font = Typography.Small,
                     ForeColor = Colors.TextMuted,
                     AutoSize = true,
-                    Location = new Point(20, 82),
+                    Location = new Point(24, 86),
                     BackColor = Color.Transparent
                 });
             }
@@ -333,46 +333,31 @@ namespace CRM.WinForms.Forms
             card.Controls.Add(new Label
             {
                 Text = string.IsNullOrWhiteSpace(branch.ManagerName)
-                    ? "No manager assigned"
+                    ? "Manager: Unassigned"
                     : "Manager: " + branch.ManagerName,
                 Font = Typography.Small,
                 ForeColor = string.IsNullOrWhiteSpace(branch.ManagerName)
                     ? Colors.TextMuted
                     : Colors.TextSecondary,
                 AutoSize = true,
-                Location = new Point(20, 104),
+                Location = new Point(24, 108),
                 BackColor = Color.Transparent
             });
 
-            string badgeText;
-            Color badgeColor;
-            if (isArchived)
-            {
-                badgeText = "Archived";
-                badgeColor = Colors.TextMuted;
-            }
-            else if (branch.IsActive)
-            {
-                badgeText = "Active";
-                badgeColor = Colors.Success;
-            }
-            else
-            {
-                badgeText = "Inactive";
-                badgeColor = Colors.TextMuted;
-            }
+            string badgeText = isArchived ? "Archived" : (branch.IsActive ? "Active" : "Inactive");
+            Color badgeFg = isArchived ? Colors.TextMuted : (branch.IsActive ? Colors.Success : Colors.TextMuted);
+            Color badgeBg = isArchived ? Color.FromArgb(241, 245, 249) : (branch.IsActive ? Colors.SuccessLight : Color.FromArgb(241, 245, 249));
 
-            var badge = new Label
+            var badge = new PillBadge
             {
-                Text = badgeText,
-                Font = Typography.Tiny,
-                ForeColor = badgeColor,
-                BackColor = Color.FromArgb(30, badgeColor),
-                TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(80, 22),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                BadgeText = badgeText,
+                FillColor = badgeBg,
+                TextColor = badgeFg,
+                Size = new Size(84, 24),
+                CornerRadius = 12,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(card.Width - 108, 16)
             };
-            badge.Location = new Point(card.Width - 100, 16);
             card.Controls.Add(badge);
 
             EventHandler onClick = (s, e) => OpenEditView(branch.BranchId);
