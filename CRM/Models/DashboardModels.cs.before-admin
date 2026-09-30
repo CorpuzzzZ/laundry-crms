@@ -1,0 +1,74 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace CRM.WinForms.Models
+{
+    public class CrewDashboardModel
+    {
+        public int TodayOrderCount { get; set; }
+        public int PendingOrderCount { get; set; }
+        public int ReadyOrderCount { get; set; }
+        public int PickedUpCount { get; set; }
+
+        public decimal TotalRevenue { get; set; }
+        public int PaymentCount { get; set; }
+        public decimal AveragePayment { get; set; }
+
+        public int PointsIssued { get; set; }
+        public int PointsRedeemed { get; set; }
+        public decimal LoyaltyDiscountGiven { get; set; }
+
+        public List<RecentOrderModel> RecentOrders { get; set; } = new();
+
+        public DateTime FromUtc { get; set; }
+        public DateTime ToUtc { get; set; }
+
+        // ===== Chart data =====
+        public List<HourlyCountModel> OrdersByHour { get; set; } = new();
+        public List<DailyRevenueModel> RevenueByDay { get; set; } = new();
+        public List<StatusCountModel> OrdersByStatus { get; set; } = new();
+    }
+
+    public class HourlyCountModel
+    {
+        public int Hour { get; set; }
+        public int Count { get; set; }
+    }
+
+    public class DailyRevenueModel
+    {
+        public DateTime Day { get; set; }
+        public decimal Revenue { get; set; }
+        public int OrderCount { get; set; }
+    }
+
+    public class StatusCountModel
+    {
+        public string StatusCode { get; set; } = string.Empty;
+        public string StatusName { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+
+    public class RecentOrderModel
+    {
+        public int OrderId { get; set; }
+        public string OrderNumber { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public string StatusName { get; set; } = string.Empty;
+        public string StatusCode { get; set; } = string.Empty;
+        public DateTime OrderDate { get; set; }
+
+        public string TotalAmountText => $"PHP {TotalAmount:N2}";
+        public string OrderDateText => OrderDate.ToLocalTime().ToString("HH:mm");
+        public string DayText => OrderDate.ToLocalTime().ToString("MMM dd");
+    }
+
+    public class CrewDashboardEnvelope
+    {
+        public bool Success { get; set; }
+        public string? Message { get; set; }
+        public CrewDashboardModel? Data { get; set; }
+    }
+}
+

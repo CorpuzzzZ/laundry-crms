@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 using CRM.UI;
@@ -151,22 +151,18 @@ namespace CRM.WinForms.Forms
             if (user?.CanAccessOrders == true)
                 _sidebar.AddItem(SidebarIcon.Orders, "Orders", "orders");
 
-            if (user?.CanAccessCustomers == true)
-                _sidebar.AddItem(SidebarIcon.Customers, "Customers", "customers");
+            _sidebar.AddItem(SidebarIcon.Customers, "Customers", "customers");
 
-            if (user?.CanAccessServices == true)
+            if (user?.IsSuperAdmin == true || user?.IsAdmin == true || user?.IsManager == true)
                 _sidebar.AddItem(SidebarIcon.Services, "Services", "services");
 
-            if (user?.CanAccessLoyalty == true)
-                _sidebar.AddItem(SidebarIcon.Loyalty, "Loyalty", "loyalty");
+            _sidebar.AddItem(SidebarIcon.Loyalty, "Loyalty", "loyalty");
 
-            if (user?.CanAccessBranches == true || user?.CanAccessUsers == true)
+            if (user?.IsSuperAdmin == true || user?.IsAdmin == true)
             {
                 _sidebar.AddSection("Admin");
-                if (user?.CanAccessBranches == true)
-                    _sidebar.AddItem(SidebarIcon.Branches, "Branches", "branches");
-                if (user?.CanAccessUsers == true)
-                    _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
+                _sidebar.AddItem(SidebarIcon.Branches, "Branches", "branches");
+                _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
             }
 
             if (user?.IsCrew != true)
@@ -228,53 +224,21 @@ namespace CRM.WinForms.Forms
                 return;
             }
 
-            // Access gate: Super Admin has NO access to operational modules
-            var user = SessionManager.CurrentUser;
-            if (user?.IsSuperAdmin == true)
-            {
-                switch (pageKey.ToLowerInvariant())
-                {
-                    case "orders":
-                    case "customers":
-                    case "services":
-                    case "loyalty":
-                    case "branches":
-                    case "users":
-                        MessageBox.Show("Access Denied: Super Admin does not have access to this module.",
-                            "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-            }
-            else if (pageKey.Equals("subscription", StringComparison.OrdinalIgnoreCase) || 
-                     pageKey.Equals("terms", StringComparison.OrdinalIgnoreCase))
-            {
-                MessageBox.Show("Access Denied: Only Super Admin can access Subscription and Terms management.",
-                    "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             _contentBody.Controls.Clear();
             _sidebar.SetActive(pageKey);
 
-            switch (pageKey.ToLowerInvariant())
+            switch (pageKey)
             {
                 case "dashboard":
+                    _pageTitle.Text = "Dashboard";
                     var _dashUser = CRM.WinForms.Services.SessionManager.CurrentUser;
-                    if (_dashUser?.IsSuperAdmin == true)
-                    {
-                        _pageTitle.Text = "Platform Dashboard";
-                        _contentBody.Controls.Add(new SuperAdminDashboardControl { Dock = DockStyle.Fill });
-                    }
-                    else if (_dashUser?.IsCrew == true && _dashUser?.IsAdmin != true && _dashUser?.IsManager != true)
-                    {
-                        _pageTitle.Text = "Crew Dashboard";
+                    bool _isCrewDash = _dashUser?.IsCrew == true
+                                    && _dashUser?.IsAdmin != true
+                                    && _dashUser?.IsManager != true;
+                    if (_isCrewDash)
                         _contentBody.Controls.Add(new CrewDashboardControl { Dock = DockStyle.Fill });
-                    }
                     else
-                    {
-                        _pageTitle.Text = "Admin Dashboard";
                         _contentBody.Controls.Add(new AdminDashboardControl { Dock = DockStyle.Fill });
-                    }
                     break;
 
                 case "orders":
@@ -308,27 +272,18 @@ namespace CRM.WinForms.Forms
                     break;
 
                 case "reports":
-                    var _repUser = CRM.WinForms.Services.SessionManager.CurrentUser;
-                    if (_repUser?.IsSuperAdmin == true)
-                    {
-                        _pageTitle.Text = "Platform Reports";
-                        _contentBody.Controls.Add(new SuperAdminReportsView { Dock = DockStyle.Fill });
-                    }
-                    else
-                    {
-                        _pageTitle.Text = "Reports";
-                        _contentBody.Controls.Add(new ReportsView { Dock = DockStyle.Fill });
-                    }
+                    _pageTitle.Text = "Reports";
+                    ShowPlaceholder("Reports");
                     break;
 
                 case "subscription":
-                    _pageTitle.Text = "Subscription Management";
-                    _contentBody.Controls.Add(new SubscriptionView { Dock = DockStyle.Fill });
+                    _pageTitle.Text = "Subscription";
+                    ShowPlaceholder("Subscription");
                     break;
 
                 case "terms":
                     _pageTitle.Text = "Terms & Conditions";
-                    _contentBody.Controls.Add(new TermsView { Dock = DockStyle.Fill });
+                    ShowPlaceholder("Terms");
                     break;
 
                 default:

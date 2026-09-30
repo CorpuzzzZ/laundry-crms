@@ -149,7 +149,6 @@ namespace CRM.WinForms.Models
         public string? ReferenceNumber { get; set; }
         public string? Notes { get; set; }
         public string? ReceivedByName { get; set; }
-        public int LoyaltyPointsToRedeem { get; set; } = 0;
     }
 
     // Lookup models
@@ -218,4 +217,3 @@ namespace CRM.WinForms.Models
         public int TotalPages { get; set; }
     }
 }
-

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -13,7 +13,7 @@ using CRM.UI.Controls;
 namespace CRM.WinForms.Forms
 {
     /// <summary>
-    /// Full-page order editor — replaces the modal OrderDetailsForm dialog.
+    /// Full-page order editor â€” replaces the modal OrderDetailsForm dialog.
     /// Handles both create (orderId = 0) and edit modes.
     /// Uses docked layout throughout for professional, responsive rendering.
     /// </summary>
@@ -24,11 +24,15 @@ namespace CRM.WinForms.Forms
 
         private readonly OrderApiService _orderService = new();
         private readonly ServiceApiService _serviceApi = new(ApiClient.Instance);
+        private readonly CustomerApiService _customerApi = new();
         private readonly int _orderId;
 
         // Header
         private Button btnBack = null!;
         private Label lblTitle = null!;
+        private Button btnMarkReady = null!;
+        private Button btnMarkPickedUp = null!;
+        private string _currentStatusCode = string.Empty;
 
         // Basic info
         private ComboBox cmbCustomer = null!;
@@ -36,7 +40,7 @@ namespace CRM.WinForms.Forms
         private TextBox txtNotes = null!;
 
         // Items
-        private FlowLayoutPanel pnlItems = null!;
+        private Panel pnlItems = null!;
         private Button btnAddItem = null!;
 
         // Billing
@@ -51,23 +55,39 @@ namespace CRM.WinForms.Forms
 
         private readonly List<OrderItemCard> _itemCards = new();
 
+        // Edit mode: add-ons that were on the existing order (locked, can't uncheck)
+        private readonly List<string> _editModeAddOns = new();
+
+        private string? _editModeCategory;
+        private decimal? _editModeWeight;
+        private int _editModeServiceId;
+        private CRM.WinForms.Models.OrderModel? _loadedOrder;
+        private bool _isLocked = false;
+
         public OrderEditView(int orderId)
         {
             _orderId = orderId;
             InitializeComponent();
+            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[OrderEditView ctor] this.Bounds={this.Bounds}, this.Dock={this.Dock}, parent={this.Parent?.GetType().Name}, parentBounds={this.Parent?.Bounds}`r`n");
             Load += async (s, e) => await LoadAsync();
         }
 
         private bool IsCreate => _orderId == 0;
 
+
         private void InitializeComponent()
         {
             Dock = DockStyle.Fill;
+
+            // Force a reasonable starting size so docked children lay out correctly
+            // before MainForm parents us (which will resize us to fill anyway)
+            Width = 1200;
+            Height = 800;
             BackColor = Colors.Background;
 
-            // ═══════════════════════════════════════════════════════
-            // FOOTER (Docked Bottom) — Cancel + Save Order
-            // ═══════════════════════════════════════════════════════
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // FOOTER (Docked Bottom) â€” Cancel + Save Order
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             var pnlFooter = new Panel
             {
                 Dock = DockStyle.Bottom,
@@ -119,9 +139,9 @@ namespace CRM.WinForms.Forms
 
             Controls.Add(pnlFooter);
 
-            // ═══════════════════════════════════════════════════════
-            // HEADER (Docked Top) — Back button + title
-            // ═══════════════════════════════════════════════════════
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // HEADER (Docked Top) â€” Back button + title
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             var pnlPageHeader = new Panel
             {
                 Dock = DockStyle.Top,
@@ -159,11 +179,53 @@ namespace CRM.WinForms.Forms
             };
             pnlPageHeader.Controls.Add(lblTitle);
 
+            // Status workflow buttons (right-aligned in header)
+            btnMarkPickedUp = new Button
+            {
+                Text = "Mark as Picked Up",
+                Size = new Size(170, 34),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Visible = false
+            };
+            btnMarkPickedUp.FlatAppearance.BorderSize = 0;
+            btnMarkPickedUp.Click += async (s, e) => await ChangeStatusAsync("PU");
+            pnlPageHeader.Controls.Add(btnMarkPickedUp);
+
+            btnMarkReady = new Button
+            {
+                Text = "Mark as Ready",
+                Size = new Size(150, 34),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Success,
+                ForeColor = Color.White,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Visible = false
+            };
+            btnMarkReady.FlatAppearance.BorderSize = 0;
+            btnMarkReady.Click += async (s, e) => await ChangeStatusAsync("RD");
+            pnlPageHeader.Controls.Add(btnMarkReady);
+
+            Action positionHeaderButtons = () =>
+            {
+                int rightEdge = pnlPageHeader.Width - Spacing.Xl;
+                btnMarkPickedUp.Location = new Point(rightEdge - btnMarkPickedUp.Width, 15);
+                btnMarkReady.Location = new Point(rightEdge - btnMarkReady.Width, 15);
+            };
+            pnlPageHeader.Resize += (s, e) => positionHeaderButtons();
+            positionHeaderButtons();
+
             Controls.Add(pnlPageHeader);
 
-            // ═══════════════════════════════════════════════════════
-            // BODY (Docked Fill) — scrollable content
-            // ═══════════════════════════════════════════════════════
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // BODY (Docked Fill) â€” scrollable content
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             var pnlBody = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -174,18 +236,17 @@ namespace CRM.WinForms.Forms
             Controls.Add(pnlBody);
             pnlBody.BringToFront();
 
-            // Layout helper — the body is a vertical stack of cards,
+            // Layout helper â€” the body is a vertical stack of cards,
             // each docked Top so they auto-size
             var pnlStack = new Panel
             {
                 Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Height = 1020,
                 BackColor = Colors.Background
             };
             pnlBody.Controls.Add(pnlStack);
 
-            // ── Customer & Order card ──
+            // â”€â”€ Customer & Order card â”€â”€
             var cardCustomer = new RoundedCard
             {
                 Dock = DockStyle.Top,
@@ -200,11 +261,11 @@ namespace CRM.WinForms.Forms
             pnlStack.Controls.Add(cardCustomer);
             BuildCustomerCard(cardCustomer);
 
-            // ── Items card ──
+            // â”€â”€ Items card â”€â”€
             var cardItems = new RoundedCard
             {
                 Dock = DockStyle.Top,
-                Height = 520,
+                Height = 500,
                 Padding = new Padding(0),
                 CornerRadius = 8,
                 FillColor = Colors.Surface,
@@ -215,7 +276,7 @@ namespace CRM.WinForms.Forms
             pnlStack.Controls.Add(cardItems);
             BuildItemsCard(cardItems);
 
-            // ── Billing card ──
+            // â”€â”€ Billing card â”€â”€
             var cardBilling = new RoundedCard
             {
                 Dock = DockStyle.Top,
@@ -234,7 +295,7 @@ namespace CRM.WinForms.Forms
             // We want: customer (top), items (middle), billing (bottom)
             // So add in reverse: billing first, then items, then customer
             // Actually WinForms docks the LAST-added control to the top.
-            // Current add order: customer, items, billing → renders bottom-up
+            // Current add order: customer, items, billing â†’ renders bottom-up
             // Fix by reversing the order: billing, items, customer
             // ... but we already added them. Instead, use Dock=Top with explicit order.
             // Simplify: re-add in reverse
@@ -242,6 +303,7 @@ namespace CRM.WinForms.Forms
             pnlStack.Controls.Add(cardBilling);
             pnlStack.Controls.Add(cardItems);
             pnlStack.Controls.Add(cardCustomer);
+            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[view chain] view={this.Bounds} pnlBody={pnlBody.Bounds} pnlStack={pnlStack.Bounds} cardItems={cardItems.Bounds}\r\n");
         }
 
         private void BuildCustomerCard(RoundedCard card)
@@ -306,7 +368,7 @@ namespace CRM.WinForms.Forms
 
         private void BuildItemsCard(RoundedCard card)
         {
-            // ── Top bar (Docked Top) ──
+            // â”€â”€ Top bar (Docked Top) â”€â”€
             var pnlHeader = new Panel
             {
                 Dock = DockStyle.Top,
@@ -345,28 +407,17 @@ namespace CRM.WinForms.Forms
 
             card.Controls.Add(pnlHeader);
 
-            // ── Items area (Docked Fill) ──
-            pnlItems = new FlowLayoutPanel
+            // â”€â”€ Items area (Docked Fill) â”€â”€
+            pnlItems = new Panel
             {
                 Dock = DockStyle.Fill,
                 AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
                 BackColor = Colors.Background,
                 Padding = new Padding(Spacing.Lg, Spacing.Lg, Spacing.Lg, Spacing.Lg)
             };
             card.Controls.Add(pnlItems);
             pnlItems.BringToFront();
 
-            pnlItems.Resize += (s, e) =>
-            {
-                int targetWidth = Math.Max(600, pnlItems.ClientSize.Width - 20);
-                foreach (Control c in pnlItems.Controls)
-                {
-                    if (c is OrderItemCard ic)
-                        ic.Width = targetWidth;
-                }
-            };
         }
 
         private void BuildBillingCard(RoundedCard card)
@@ -385,8 +436,7 @@ namespace CRM.WinForms.Forms
             y += 32;
 
             lblSubtotal = AddBillRow(card, "Items Subtotal", y);
-            lblChemical = AddBillRow(card, "Chemical Add-ons", y + 34);
-            lblMachine = AddBillRow(card, "Machine Add-ons", y + 68);
+            lblChemical = AddBillRow(card, "Add-Ons", y + 34);
 
             // Total row
             var lblTotalCaption = new Label
@@ -394,7 +444,7 @@ namespace CRM.WinForms.Forms
                 Text = "TOTAL",
                 Font = Typography.H3,
                 ForeColor = Colors.TextPrimary,
-                Location = new Point(cx, y + 116),
+                Location = new Point(cx, y + 82),
                 AutoSize = true
             };
             card.Controls.Add(lblTotalCaption);
@@ -404,7 +454,7 @@ namespace CRM.WinForms.Forms
                 Text = "PHP 0.00",
                 Font = Typography.H2,
                 ForeColor = Colors.Primary,
-                Location = new Point(cx + 400, y + 114),
+                Location = new Point(cx + 400, y + 80),
                 Width = 300,
                 Height = 30,
                 TextAlign = ContentAlignment.MiddleRight
@@ -448,10 +498,23 @@ namespace CRM.WinForms.Forms
 
         private async Task LoadAsync()
         {
-            // Customer list (placeholder until CustomerApiService is wired)
-            cmbCustomer.Items.Clear();
-            cmbCustomer.Items.Add(new ComboItem(1, "Walk-in Customer"));
-            cmbCustomer.SelectedIndex = 0;
+            // Customer list — loaded from CustomerApiService
+            try
+            {
+                var custResp = await _customerApi.GetCustomersAsync(page: 1, pageSize: 200, isActive: true);
+                cmbCustomer.Items.Clear();
+                foreach (var c in custResp.Data)
+                    cmbCustomer.Items.Add(new ComboItem(c.CustomerId, FormatCustomer(c)));
+                if (cmbCustomer.Items.Count > 0)
+                    cmbCustomer.SelectedIndex = 0;
+                else
+                    cmbCustomer.Items.Add(new ComboItem(0, "(no customers found)"));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load customers: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
 
             // Edit mode: load existing order
             if (!IsCreate)
@@ -462,8 +525,45 @@ namespace CRM.WinForms.Forms
                     if (order != null)
                     {
                         lblTitle.Text = $"Edit Order #{order.OrderNumber}";
+                        _currentStatusCode = order.StatusCode;
+                        _loadedOrder = order;
                         txtNotes.Text = order.Notes ?? "";
+
+                        // Extract add-ons from the first order item
+                        _editModeAddOns.Clear();
+                        if (order.Items != null && order.Items.Count > 0)
+                        {
+                            _editModeAddOns.AddRange(order.Items[0].AddOns);
+                            _editModeCategory = order.Items[0].CategoryName;
+                            _editModeWeight = order.Items[0].WeightKg;
+                            _editModeServiceId = order.Items[0].ServiceId;
+                        }
+
+                        // Select the order's customer in the dropdown
+                        for (int i = 0; i < cmbCustomer.Items.Count; i++)
+                        {
+                            var item = cmbCustomer.Items[i] as ComboItem;
+                            if (item != null && item.Value == order.CustomerId)
+                            {
+                                cmbCustomer.SelectedIndex = i;
+                                break;
+                            }
+                        }
+
                         lblOrderDate.Text = order.OrderDate.ToString("yyyy-MM-dd HH:mm");
+
+                        UpdateStatusButtons();
+
+                        // Lock the view if order is Picked Up or Delivered
+                        if (_currentStatusCode == "PU" || _currentStatusCode == "DE")
+                        {
+                            _isLocked = true;
+                            cmbCustomer.Enabled = false;
+                            txtNotes.ReadOnly = true;
+                            btnAddItem.Enabled = false;
+                            if (btnSave != null) btnSave.Visible = false;
+                            lblTitle.Text = $"Order {order.OrderNumber} — {order.StatusName} (Locked)";
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -486,11 +586,24 @@ namespace CRM.WinForms.Forms
                 txtNotes.ReadOnly = true;
                 btnAddItem.Enabled = false;
             }
+
+            // Edit mode: lock the customer field
+            if (!IsCreate)
+            {
+                cmbCustomer.Enabled = false;
+            }
         }
 
         private async Task AddItemAsync()
         {
             var card = new OrderItemCard();
+            if (!IsCreate)
+            {
+                card.IsEditMode = true;
+                card.PreCheckedAddOns.AddRange(_editModeAddOns);
+                card.PreSetCategory = _editModeCategory;
+                card.PreSetWeight = _editModeWeight;
+            }
             card.ItemChanged += (s, e) => RecalculateBilling();
             card.RemoveRequested += (s, e) =>
             {
@@ -506,28 +619,93 @@ namespace CRM.WinForms.Forms
             };
 
             // Set width BEFORE adding so it fits
-            card.Width = Math.Max(600, pnlItems.ClientSize.Width - 20);
 
             _itemCards.Add(card);
             pnlItems.Controls.Add(card);
+            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[after add] card.Bounds={card.Bounds} card.Dock={card.Dock} card.Parent={card.Parent?.GetType().Name} card.ParentBounds={card.Parent?.Bounds} pnlItems.Bounds={pnlItems.Bounds} pnlItems.Parent={pnlItems.Parent?.GetType().Name} pnlItems.ParentBounds={pnlItems.Parent?.Bounds}`r`n");
 
             // Re-apply after add
-            card.Width = Math.Max(600, pnlItems.ClientSize.Width - 20);
 
             await card.InitializeDataAsync(_serviceApi);
+
+            card.ApplyEditMode();
+            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[edit-apply] IsEditMode={card.IsEditMode} PreSetCategory={card.PreSetCategory} PreSetWeight={card.PreSetWeight} checkedAddOns={string.Join(",", card.PreCheckedAddOns)}`r`n");
         }
 
         private void RecalculateBilling()
         {
             decimal sub = _itemCards.Sum(c => c.ServiceLineTotal);
             decimal chem = _itemCards.Sum(c => c.ChemicalTotal);
-            decimal mach = _itemCards.Sum(c => c.MachineTotal);
-            decimal total = sub + chem + mach;
+            decimal total = sub + chem;
 
             lblSubtotal.Text = $"PHP {sub:N2}";
             lblChemical.Text = $"PHP {chem:N2}";
-            lblMachine.Text = $"PHP {mach:N2}";
             lblTotal.Text = $"PHP {total:N2}";
+        }
+
+        private void UpdateStatusButtons()
+        {
+            if (IsCreate)
+            {
+                btnMarkReady.Visible = false;
+                btnMarkPickedUp.Visible = false;
+                return;
+            }
+
+            var user = SessionManager.CurrentUser;
+            bool canModify = user?.CanModifyOrders == true;
+
+            bool showReady = canModify && (_currentStatusCode == "PE" || _currentStatusCode == "PR");
+            decimal paidAmount = _loadedOrder?.Payments?.Sum(p => p.Amount) ?? 0m;
+            bool isFullyPaid = _loadedOrder != null && _loadedOrder.TotalAmount > 0 && paidAmount >= _loadedOrder.TotalAmount;
+            bool showPickedUp = canModify && _currentStatusCode == "RD" && isFullyPaid;
+
+            btnMarkReady.Visible = showReady;
+            btnMarkPickedUp.Visible = showPickedUp;
+        }
+
+        private async Task ChangeStatusAsync(string targetStatusCode)
+        {
+            int statusId = targetStatusCode switch
+            {
+                "RD" => 3,
+                "PU" => 4,
+                _ => 0
+            };
+
+            if (statusId == 0) return;
+
+            string prompt = targetStatusCode == "RD"
+                ? "Mark this order as Ready for Pickup?"
+                : "Mark this order as Picked Up by the customer?";
+
+            var confirm = MessageBox.Show(prompt, "Confirm Status Change",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (confirm != DialogResult.Yes) return;
+
+            var request = new OrderStatusChangeRequest
+            {
+                StatusId = statusId,
+                Notes = targetStatusCode == "RD"
+                    ? "Order ready for pickup"
+                    : "Order picked up by customer",
+                ChangedByName = SessionManager.CurrentUser?.FullName
+            };
+
+            var (success, _, error) = await _orderService.ChangeStatusAsync(_orderId, request);
+
+            if (success)
+            {
+                MessageBox.Show($"Order status updated successfully.",
+                    "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Saved?.Invoke(this, EventArgs.Empty);
+            }
+            else
+            {
+                MessageBox.Show($"Failed to update status: {error}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private async Task SaveAsync()
@@ -557,10 +735,13 @@ namespace CRM.WinForms.Forms
 
                 items.Add(new CreateOrderItemRequest
                 {
-                    ServiceId = 1,
+                    ServiceId = card.ServiceId,
                     Quantity = 1,
-                    UnitPrice = card.ServiceLineTotal,
-                    DiscountAmount = 0
+                    UnitPrice = card.LineTotal,
+                    DiscountAmount = 0,
+                    AddOns = card.GetCheckedAddOns(),
+                    WeightKg = card.CurrentWeight,
+                    CategoryName = card.CategoryName
                 });
             }
 
@@ -599,8 +780,37 @@ namespace CRM.WinForms.Forms
                 }
                 else
                 {
-                    MessageBox.Show("Update not yet implemented.", "Info",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    var updateRequest = new UpdateOrderRequest
+                    {
+                        CustomerId = (cmbCustomer.SelectedItem as ComboItem)?.Value ?? 1,
+                        Priority = "Normal",
+                        Notes = txtNotes.Text,
+                        PickupDate = now,
+                        DeliveryDate = now.AddDays(2),
+                        Items = items.Select(i => new UpdateOrderItemRequest
+                        {
+                            ServiceId = i.ServiceId,
+                            Quantity = i.Quantity,
+                            UnitPrice = i.UnitPrice,
+                            DiscountAmount = i.DiscountAmount,
+                            AddOns = i.AddOns,
+                            WeightKg = i.WeightKg,
+                            CategoryName = i.CategoryName
+                        }).ToList()
+                    };
+
+                    var (updateSuccess, _, updateError) = await _orderService.UpdateOrderAsync(_orderId, updateRequest);
+                    if (updateSuccess)
+                    {
+                        MessageBox.Show($"Order #{_orderId} updated successfully.",
+                            "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        Saved?.Invoke(this, EventArgs.Empty);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Failed to update: {updateError}", "Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 }
             }
             finally
@@ -608,6 +818,18 @@ namespace CRM.WinForms.Forms
                 btnSave.Enabled = true;
                 btnSave.Text = "Save Order";
             }
+        }
+
+        private static string FormatCustomer(CustomerModel c)
+        {
+            var name = !string.IsNullOrWhiteSpace(c.CompanyName)
+                ? c.CompanyName
+                : c.FullName;
+
+            if (!string.IsNullOrWhiteSpace(c.PhonePrimary))
+                name += $"  ({c.PhonePrimary})";
+
+            return name;
         }
     }
 }

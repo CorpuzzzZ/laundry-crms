@@ -1,0 +1,417 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.WinForms.Forms
+{
+    public class CrewDashboardControl : UserControl
+    {
+        private readonly DashboardApiService _api = new(ApiClient.Instance);
+
+        private Panel _pnlHeader = null!;
+        private Label _lblTitle = null!;
+        private Label _lblRange = null!;
+        private Button _btnRefresh = null!;
+
+        // Operational cards
+        private Label _lblTodayOrders = null!;
+        private Label _lblPendingOrders = null!;
+        private Label _lblReadyOrders = null!;
+        private Label _lblPickedUp = null!;
+
+        // Revenue + loyalty cards
+        private Label _lblRevenue = null!;
+        private Label _lblRevenueSub = null!;
+        private Label _lblPointsIssued = null!;
+        private Label _lblPointsRedeemed = null!;
+        private Label _lblDiscountGiven = null!;
+
+        // Recent orders grid
+        private DataGridView _dgvRecent = null!;
+
+        public CrewDashboardControl()
+        {
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+            Font = Typography.Body;
+            Padding = new Padding(24);
+
+            // ===== Header =====
+            _pnlHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 56,
+                BackColor = Colors.Background
+            };
+
+            _lblTitle = new Label
+            {
+                Text = "Dashboard",
+                Left = 0, Top = 4,
+                AutoSize = true,
+                Font = Typography.H2,
+                ForeColor = Colors.TextPrimary
+            };
+            _pnlHeader.Controls.Add(_lblTitle);
+
+            _lblRange = new Label
+            {
+                Text = "Today",
+                Left = 0, Top = 34,
+                AutoSize = true,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary
+            };
+            _pnlHeader.Controls.Add(_lblRange);
+
+            _btnRefresh = new Button
+            {
+                Text = "Refresh",
+                Width = 100, Height = 34,
+                Top = 8,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            _btnRefresh.FlatAppearance.BorderSize = 1;
+            _btnRefresh.FlatAppearance.BorderColor = Colors.Border;
+            _btnRefresh.Click += async (s, e) => await LoadAsync();
+            _pnlHeader.Controls.Add(_btnRefresh);
+            _pnlHeader.Resize += (s, e) =>
+            {
+                _btnRefresh.Left = _pnlHeader.ClientSize.Width - _btnRefresh.Width;
+            };
+
+            // ===== Scrollable body =====
+            var scroller = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Colors.Background
+            };
+
+            var stack = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 640,
+                BackColor = Colors.Background
+            };
+
+            // Row 1 — 4 operational cards
+            var row1 = new Panel { Dock = DockStyle.Top, Height = 110, BackColor = Colors.Background };
+            row1.Controls.Add(MakeCard("TODAY'S ORDERS", out _lblTodayOrders, "orders created", 0));
+            row1.Controls.Add(MakeCard("PENDING", out _lblPendingOrders, "in queue", 1));
+            row1.Controls.Add(MakeCard("READY FOR PICKUP", out _lblReadyOrders, "waiting", 2));
+            row1.Controls.Add(MakeCard("PICKED UP", out _lblPickedUp, "today", 3));
+
+            // Spacer
+            var sp1 = new Panel { Dock = DockStyle.Top, Height = 16, BackColor = Colors.Background };
+
+            // Row 2 — Revenue + Loyalty
+            var row2 = new Panel { Dock = DockStyle.Top, Height = 180, BackColor = Colors.Background };
+
+            // Revenue card (wider)
+            var revCard = new Panel
+            {
+                Left = 0, Top = 0, Width = 480, Height = 170,
+                BackColor = Colors.Surface,
+                Padding = new Padding(20, 14, 20, 14),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            revCard.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawRectangle(pen, 0, 0, revCard.Width - 1, revCard.Height - 1);
+            };
+
+            revCard.Controls.Add(new Label
+            {
+                Text = "REVENUE",
+                Left = 20, Top = 14,
+                AutoSize = true,
+                Font = Typography.SmallBold,
+                ForeColor = Colors.TextSecondary
+            });
+
+            _lblRevenue = new Label
+            {
+                Text = "PHP 0.00",
+                Left = 20, Top = 40,
+                AutoSize = true,
+                Font = new Font(Typography.Family, 24f, FontStyle.Bold),
+                ForeColor = Colors.Success
+            };
+            revCard.Controls.Add(_lblRevenue);
+
+            _lblRevenueSub = new Label
+            {
+                Text = "0 payments · avg PHP 0.00",
+                Left = 20, Top = 84,
+                AutoSize = true,
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody
+            };
+            revCard.Controls.Add(_lblRevenueSub);
+
+            row2.Controls.Add(revCard);
+
+            // Loyalty card (wider)
+            var loyCard = new Panel
+            {
+                Left = 496, Top = 0, Width = 480, Height = 170,
+                BackColor = Colors.Surface,
+                Padding = new Padding(20, 14, 20, 14),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            loyCard.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawRectangle(pen, 0, 0, loyCard.Width - 1, loyCard.Height - 1);
+            };
+
+            loyCard.Controls.Add(new Label
+            {
+                Text = "LOYALTY ACTIVITY",
+                Left = 20, Top = 14,
+                AutoSize = true,
+                Font = Typography.SmallBold,
+                ForeColor = Colors.TextSecondary
+            });
+
+            loyCard.Controls.Add(MakeMiniStat("Points Issued",     out _lblPointsIssued,   20, 46));
+            loyCard.Controls.Add(MakeMiniStat("Points Redeemed",   out _lblPointsRedeemed, 20, 92));
+            loyCard.Controls.Add(MakeMiniStat("Discount Given",    out _lblDiscountGiven,  240, 92));
+
+            row2.Controls.Add(loyCard);
+
+            // Spacer
+            var sp2 = new Panel { Dock = DockStyle.Top, Height = 16, BackColor = Colors.Background };
+
+            // Row 3 — Recent Orders
+            var recentHost = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 300,
+                BackColor = Colors.Background
+            };
+
+            recentHost.Controls.Add(new Label
+            {
+                Text = "RECENT ORDERS",
+                Dock = DockStyle.Top,
+                Height = 24,
+                Font = Typography.SmallBold,
+                ForeColor = Colors.TextSecondary
+            });
+
+            _dgvRecent = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AutoGenerateColumns = false,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false,
+                RowHeadersVisible = false,
+                BackgroundColor = Colors.Surface,
+                BorderStyle = BorderStyle.None,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Colors.Background,
+                    ForeColor = Colors.TextSecondary,
+                    Font = Typography.Small,
+                    Alignment = DataGridViewContentAlignment.MiddleLeft
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    ForeColor = Colors.TextBody,
+                    SelectionBackColor = Colors.PrimaryLight,
+                    SelectionForeColor = Colors.TextPrimary,
+                    Padding = new Padding(8, 0, 8, 0)
+                },
+                RowTemplate = { Height = 30 }
+            };
+
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Order #", DataPropertyName = "OrderNumber", Width = 160 });
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Customer", DataPropertyName = "CustomerName", Width = 200 });
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Total", DataPropertyName = "TotalAmountText", Width = 120 });
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Status", DataPropertyName = "StatusName", Width = 120 });
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Day", DataPropertyName = "DayText", Width = 80 });
+            _dgvRecent.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Time", DataPropertyName = "OrderDateText", Width = 80 });
+
+            recentHost.Controls.Add(_dgvRecent);
+            _dgvRecent.BringToFront();
+
+            // Compose
+            stack.Controls.Add(recentHost);
+            stack.Controls.Add(sp2);
+            stack.Controls.Add(row2);
+            stack.Controls.Add(sp1);
+            stack.Controls.Add(row1);
+
+            scroller.Controls.Add(stack);
+
+            // Auto-fit: adjust stack height when scroller resizes
+            scroller.Resize += (s, e) =>
+            {
+                stack.Width = scroller.ClientSize.Width;
+            };
+
+            Controls.Add(scroller);
+            Controls.Add(_pnlHeader);
+        }
+
+        private Panel MakeCard(string caption, out Label valueLabel, string hint, int index)
+        {
+            int cardWidth = 240;
+            int cardHeight = 100;
+            int spacing = 16;
+
+            var card = new Panel
+            {
+                Left = index * (cardWidth + spacing),
+                Top = 0,
+                Width = cardWidth,
+                Height = cardHeight,
+                BackColor = Colors.Surface,
+                Padding = new Padding(14, 10, 14, 10),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            card.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+
+            card.Controls.Add(new Label
+            {
+                Text = caption,
+                Left = 14, Top = 10,
+                AutoSize = true,
+                Font = Typography.SmallBold,
+                ForeColor = Colors.TextSecondary
+            });
+
+            valueLabel = new Label
+            {
+                Text = "0",
+                Left = 14, Top = 32,
+                Width = card.Width - 28, Height = 40,
+                Font = new Font(Typography.Family, 22f, FontStyle.Bold),
+                ForeColor = Colors.TextPrimary
+            };
+            card.Controls.Add(valueLabel);
+
+            card.Controls.Add(new Label
+            {
+                Text = hint,
+                Left = 14, Top = 76,
+                AutoSize = true,
+                Font = Typography.Small,
+                ForeColor = Colors.TextMuted
+            });
+
+            return card;
+        }
+
+        private Panel MakeMiniStat(string caption, out Label valueLabel, int x, int y)
+        {
+            var host = new Panel
+            {
+                Left = x, Top = y,
+                Width = 200, Height = 40,
+                BackColor = Colors.Surface
+            };
+
+            host.Controls.Add(new Label
+            {
+                Text = caption,
+                Left = 0, Top = 0,
+                AutoSize = true,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary
+            });
+
+            valueLabel = new Label
+            {
+                Text = "0",
+                Left = 0, Top = 18,
+                Width = 200, Height = 22,
+                Font = new Font(Typography.Family, 12f, FontStyle.Bold),
+                ForeColor = Colors.TextPrimary
+            };
+            host.Controls.Add(valueLabel);
+
+            return host;
+        }
+
+        private async Task LoadAsync()
+        {
+            try
+            {
+                // Compute local "today" as UTC range
+                var localFrom = DateTime.Today;
+                var localTo = localFrom.AddDays(1);
+                var fromUtc = localFrom.ToUniversalTime();
+                var toUtc = localTo.ToUniversalTime();
+
+                _lblRange.Text = $"Range: {localFrom:MMM dd} (local day)";
+
+                var d = await _api.GetCrewDashboardAsync(fromUtc, toUtc);
+                if (d == null)
+                {
+                    MessageBox.Show("Failed to load dashboard data.",
+                        "Dashboard", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Operational
+                _lblTodayOrders.Text = d.TodayOrderCount.ToString("N0");
+                _lblPendingOrders.Text = d.PendingOrderCount.ToString("N0");
+                _lblReadyOrders.Text = d.ReadyOrderCount.ToString("N0");
+                _lblPickedUp.Text = d.PickedUpCount.ToString("N0");
+
+                // Revenue
+                _lblRevenue.Text = $"PHP {d.TotalRevenue:N2}";
+                _lblRevenueSub.Text = $"{d.PaymentCount} payment(s) · avg PHP {d.AveragePayment:N2}";
+
+                // Loyalty
+                _lblPointsIssued.Text = d.PointsIssued.ToString("N0");
+                _lblPointsRedeemed.Text = d.PointsRedeemed.ToString("N0");
+                _lblDiscountGiven.Text = $"PHP {d.LoyaltyDiscountGiven:N2}";
+
+                // Recent orders
+                _dgvRecent.DataSource = null;
+                _dgvRecent.DataSource = d.RecentOrders;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Dashboard error:\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+}

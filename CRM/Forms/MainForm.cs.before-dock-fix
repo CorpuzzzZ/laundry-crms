@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 using CRM.UI;
@@ -151,22 +151,18 @@ namespace CRM.WinForms.Forms
             if (user?.CanAccessOrders == true)
                 _sidebar.AddItem(SidebarIcon.Orders, "Orders", "orders");
 
-            if (user?.CanAccessCustomers == true)
-                _sidebar.AddItem(SidebarIcon.Customers, "Customers", "customers");
+            _sidebar.AddItem(SidebarIcon.Customers, "Customers", "customers");
 
-            if (user?.CanAccessServices == true)
+            if (user?.IsSuperAdmin == true || user?.IsAdmin == true || user?.IsManager == true)
                 _sidebar.AddItem(SidebarIcon.Services, "Services", "services");
 
-            if (user?.CanAccessLoyalty == true)
-                _sidebar.AddItem(SidebarIcon.Loyalty, "Loyalty", "loyalty");
+            _sidebar.AddItem(SidebarIcon.Loyalty, "Loyalty", "loyalty");
 
-            if (user?.CanAccessBranches == true || user?.CanAccessUsers == true)
+            if (user?.IsSuperAdmin == true || user?.IsAdmin == true)
             {
                 _sidebar.AddSection("Admin");
-                if (user?.CanAccessBranches == true)
-                    _sidebar.AddItem(SidebarIcon.Branches, "Branches", "branches");
-                if (user?.CanAccessUsers == true)
-                    _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
+                _sidebar.AddItem(SidebarIcon.Branches, "Branches", "branches");
+                _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
             }
 
             if (user?.IsCrew != true)
@@ -228,53 +224,14 @@ namespace CRM.WinForms.Forms
                 return;
             }
 
-            // Access gate: Super Admin has NO access to operational modules
-            var user = SessionManager.CurrentUser;
-            if (user?.IsSuperAdmin == true)
-            {
-                switch (pageKey.ToLowerInvariant())
-                {
-                    case "orders":
-                    case "customers":
-                    case "services":
-                    case "loyalty":
-                    case "branches":
-                    case "users":
-                        MessageBox.Show("Access Denied: Super Admin does not have access to this module.",
-                            "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-            }
-            else if (pageKey.Equals("subscription", StringComparison.OrdinalIgnoreCase) || 
-                     pageKey.Equals("terms", StringComparison.OrdinalIgnoreCase))
-            {
-                MessageBox.Show("Access Denied: Only Super Admin can access Subscription and Terms management.",
-                    "Access Restricted", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
             _contentBody.Controls.Clear();
             _sidebar.SetActive(pageKey);
 
-            switch (pageKey.ToLowerInvariant())
+            switch (pageKey)
             {
                 case "dashboard":
-                    var _dashUser = CRM.WinForms.Services.SessionManager.CurrentUser;
-                    if (_dashUser?.IsSuperAdmin == true)
-                    {
-                        _pageTitle.Text = "Platform Dashboard";
-                        _contentBody.Controls.Add(new SuperAdminDashboardControl { Dock = DockStyle.Fill });
-                    }
-                    else if (_dashUser?.IsCrew == true && _dashUser?.IsAdmin != true && _dashUser?.IsManager != true)
-                    {
-                        _pageTitle.Text = "Crew Dashboard";
-                        _contentBody.Controls.Add(new CrewDashboardControl { Dock = DockStyle.Fill });
-                    }
-                    else
-                    {
-                        _pageTitle.Text = "Admin Dashboard";
-                        _contentBody.Controls.Add(new AdminDashboardControl { Dock = DockStyle.Fill });
-                    }
+                    _pageTitle.Text = "Dashboard";
+                    _contentBody.Controls.Add(new DashboardControl { Dock = DockStyle.Fill });
                     break;
 
                 case "orders":
@@ -294,7 +251,7 @@ namespace CRM.WinForms.Forms
 
                 case "loyalty":
                     _pageTitle.Text = "Loyalty Program";
-                    _contentBody.Controls.Add(new LoyaltyView { Dock = DockStyle.Fill });
+                    ShowPlaceholder("Loyalty");
                     break;
 
                 case "branches":
@@ -308,27 +265,18 @@ namespace CRM.WinForms.Forms
                     break;
 
                 case "reports":
-                    var _repUser = CRM.WinForms.Services.SessionManager.CurrentUser;
-                    if (_repUser?.IsSuperAdmin == true)
-                    {
-                        _pageTitle.Text = "Platform Reports";
-                        _contentBody.Controls.Add(new SuperAdminReportsView { Dock = DockStyle.Fill });
-                    }
-                    else
-                    {
-                        _pageTitle.Text = "Reports";
-                        _contentBody.Controls.Add(new ReportsView { Dock = DockStyle.Fill });
-                    }
+                    _pageTitle.Text = "Reports";
+                    ShowPlaceholder("Reports");
                     break;
 
                 case "subscription":
-                    _pageTitle.Text = "Subscription Management";
-                    _contentBody.Controls.Add(new SubscriptionView { Dock = DockStyle.Fill });
+                    _pageTitle.Text = "Subscription";
+                    ShowPlaceholder("Subscription");
                     break;
 
                 case "terms":
                     _pageTitle.Text = "Terms & Conditions";
-                    _contentBody.Controls.Add(new TermsView { Dock = DockStyle.Fill });
+                    ShowPlaceholder("Terms");
                     break;
 
                 default:
@@ -354,8 +302,6 @@ namespace CRM.WinForms.Forms
             // Wire navigation events
             ordersForm.NewOrderRequested += (s, e) => ShowOrderEdit(0);
             ordersForm.EditOrderRequested += (s, e) => ShowOrderEdit(e);
-            ordersForm.PayOrderRequested += (s, e) => ShowPayment(e);
-            ordersForm.ViewOrderDetailsRequested += (s, e) => ShowOrderDetails(e);
 
             _contentBody.Controls.Add(ordersForm);
             ordersForm.Show();
@@ -377,61 +323,13 @@ namespace CRM.WinForms.Forms
             view.Cancelled += (s, e) => ShowOrdersList();
 
             _contentBody.Controls.Add(view);
-            view.Dock = DockStyle.None;
             view.Bounds = _contentBody.ClientRectangle;
-            view.Dock = DockStyle.Fill;
             view.PerformLayout();
-            _contentBody.PerformLayout();
             System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[MainForm after add view] _contentBody.Bounds={_contentBody.Bounds} _content.Bounds={_content.Bounds} this.ClientSize={this.ClientSize} this.WindowState={this.WindowState}`r`n");
             view.BringToFront();
 
             // Update page title
             _pageTitle.Text = orderId == 0 ? "New Order" : "Edit Order";
-        }
-
-        private void ShowPayment(int orderId)
-        {
-            _contentBody.Controls.Clear();
-
-            var view = new PaymentView(orderId)
-            {
-                Dock = DockStyle.Fill
-            };
-
-            view.Saved += (s, e) => ShowOrdersList();
-            view.Cancelled += (s, e) => ShowOrdersList();
-
-            _contentBody.Controls.Add(view);
-            view.Dock = DockStyle.None;
-            view.Bounds = _contentBody.ClientRectangle;
-            view.Dock = DockStyle.Fill;
-            view.PerformLayout();
-            _contentBody.PerformLayout();
-            view.BringToFront();
-
-            _pageTitle.Text = "Process Payment";
-        }
-
-        private void ShowOrderDetails(int orderId)
-        {
-            _contentBody.Controls.Clear();
-
-            var view = new OrderDetailsView(orderId)
-            {
-                Dock = DockStyle.Fill
-            };
-
-            view.Cancelled += (s, e) => ShowOrdersList();
-
-            _contentBody.Controls.Add(view);
-            view.Dock = DockStyle.None;
-            view.Bounds = _contentBody.ClientRectangle;
-            view.Dock = DockStyle.Fill;
-            view.PerformLayout();
-            _contentBody.PerformLayout();
-            view.BringToFront();
-
-            _pageTitle.Text = "Order Details";
         }
 
         private void ShowPlaceholder(string name)
@@ -472,6 +370,3 @@ namespace CRM.WinForms.Forms
         }
     }
 }
-
-
-

@@ -1,0 +1,797 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.WinForms.Forms
+{
+    public class LoyaltyView : UserControl
+    {
+        private readonly LoyaltyApiService _api = new(ApiClient.Instance);
+
+        private TabControl _tabs = null!;
+
+        // Settings tab
+        private NumericUpDown _numPointsPerOrder = null!;
+        private NumericUpDown _numPointsPerDollar = null!;
+        private NumericUpDown _numRedeemRequired = null!;
+        private NumericUpDown _numRedeemDiscount = null!;
+        private NumericUpDown _numExpiryDays = null!;
+        private CheckBox _chkExpiryEnabled = null!;
+        private CheckBox _chkActive = null!;
+        private Label _lblEarnPreview = null!;
+        private Label _lblRedeemPreview = null!;
+        private Button _btnSaveSettings = null!;
+
+        // Active-rule banner (read-only display of what's actually saved)
+        private Panel _bannerPanel = null!;
+        private Label _bannerTitle = null!;
+        private Label _bannerEarn = null!;
+        private Label _bannerRedeem = null!;
+        private Label _bannerStatus = null!;
+        private LoyaltySettingModel? _savedSnapshot;
+
+        // Tiers tab
+        private DataGridView _dgvTiers = null!;
+        private Button _btnNewTier = null!;
+        private Button _btnEditTier = null!;
+        private Button _btnDeleteTier = null!;
+        private Button _btnRefreshTiers = null!;
+        private List<LoyaltyTierModel> _tiers = new();
+
+        // Customers tab
+        private DataGridView _dgvCustomers = null!;
+        private TextBox _txtCustomerSearch = null!;
+        private Button _btnRefreshCustomers = null!;
+        private List<LoyaltyCustomerModel> _customers = new();
+
+        public LoyaltyView()
+        {
+            InitializeComponent();
+            Load += async (s, e) => await LoadAllAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+            Font = Typography.Body;
+
+            _tabs = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Point(16, 6),
+                Font = Typography.Body
+            };
+
+            _tabs.TabPages.Add(BuildSettingsTab());
+            _tabs.TabPages.Add(BuildTiersTab());
+            _tabs.TabPages.Add(BuildCustomersTab());
+            _tabs.SelectedIndexChanged += async (s, e) =>
+            {
+                if (_tabs.SelectedIndex == 0) await LoadSettingsAsync();
+                else if (_tabs.SelectedIndex == 1) await LoadTiersAsync();
+                else await LoadCustomersAsync();
+            };
+
+            Controls.Add(_tabs);
+        }
+
+        // ============================================================
+        // SETTINGS TAB
+        // ============================================================
+        private TabPage BuildSettingsTab()
+        {
+            var page = new TabPage("Settings")
+            {
+                BackColor = Colors.Background,
+                Padding = new Padding(0)
+            };
+
+            // Scrollable host: fills the tab, shows scrollbars when needed
+            var scroller = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Colors.Background,
+                Padding = new Padding(40, 24, 40, 24)
+            };
+
+            // Inner card with fixed height that content actually needs
+            var card = new Panel
+            {
+                Location = new Point(40, 24),
+                Width = 900,          // will be widened to fit on resize below
+                Height = 580,         // actual content height — increase if you add fields
+                BackColor = Colors.Surface,
+                Padding = new Padding(28, 24, 28, 24),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            int y = 24;
+
+            // ---- Active rule banner (read-only) ----
+            _bannerPanel = BuildActiveRuleBanner(y);
+            card.Controls.Add(_bannerPanel);
+            y += _bannerPanel.Height + 16;
+
+            card.Controls.Add(HeaderLabel("Earning", y)); y += 32;
+            card.Controls.Add(SubLabel("How customers accumulate loyalty points.", y)); y += 30;
+
+            card.Controls.Add(FieldLabel("Points per order", y));
+            _numPointsPerOrder = MakeNum(y + 22, 140, 0m, 10000m, 2);
+            _numPointsPerOrder.ValueChanged += (s, e) => UpdatePreviews();
+            card.Controls.Add(_numPointsPerOrder);
+            card.Controls.Add(InlineHint("awarded for every completed order", 200, y + 26));
+            y += 72;
+
+            card.Controls.Add(FieldLabel("Points per peso spent", y));
+            _numPointsPerDollar = MakeNum(y + 22, 140, 0m, 10000m, 2);
+            _numPointsPerDollar.ValueChanged += (s, e) => UpdatePreviews();
+            card.Controls.Add(_numPointsPerDollar);
+            card.Controls.Add(InlineHint("multiplied by the order total", 200, y + 26));
+            y += 88;
+
+            card.Controls.Add(HeaderLabel("Redemption", y)); y += 32;
+            card.Controls.Add(SubLabel("What a customer gets when they redeem points.", y)); y += 30;
+
+            card.Controls.Add(FieldLabel("Points required to redeem", y));
+            _numRedeemRequired = MakeNum(y + 22, 140, 1m, 1000000m, 0);
+            _numRedeemRequired.ValueChanged += (s, e) => UpdatePreviews();
+            card.Controls.Add(_numRedeemRequired);
+            y += 72;
+
+            card.Controls.Add(FieldLabel("Discount amount (PHP)", y));
+            _numRedeemDiscount = MakeNum(y + 22, 140, 0m, 1000000m, 2);
+            _numRedeemDiscount.ValueChanged += (s, e) => UpdatePreviews();
+            card.Controls.Add(_numRedeemDiscount);
+            y += 88;
+
+            card.Controls.Add(HeaderLabel("Rules", y)); y += 32;
+
+            _chkExpiryEnabled = new CheckBox
+            {
+                Text = "Points expire after",
+                Left = 28, Top = y, Width = 160, Height = 26,
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody
+            };
+            _chkExpiryEnabled.CheckedChanged += (s, e) =>
+                _numExpiryDays.Enabled = _chkExpiryEnabled.Checked;
+            card.Controls.Add(_chkExpiryEnabled);
+
+            _numExpiryDays = MakeNum(y - 2, 100, 1m, 36500m, 0);
+            _numExpiryDays.Left = 195;
+            _numExpiryDays.Enabled = false;
+            card.Controls.Add(_numExpiryDays);
+            card.Controls.Add(InlineHint("days", 305, y + 4));
+            y += 44;
+
+            _chkActive = new CheckBox
+            {
+                Text = "Loyalty program is active",
+                Left = 28, Top = y, Width = 260, Height = 26,
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody
+            };
+            card.Controls.Add(_chkActive);
+            y += 52;
+
+            _lblEarnPreview = new Label
+            {
+                Left = 28, Top = y, Width = 700, Height = 26,
+                Font = Typography.Body, ForeColor = Colors.TextSecondary
+            };
+            card.Controls.Add(_lblEarnPreview); y += 26;
+
+            _lblRedeemPreview = new Label
+            {
+                Left = 28, Top = y, Width = 700, Height = 26,
+                Font = Typography.Body, ForeColor = Colors.TextSecondary
+            };
+            card.Controls.Add(_lblRedeemPreview); y += 42;
+
+            _btnSaveSettings = MakePrimaryButton("Save Settings");
+            _btnSaveSettings.Left = 28;
+            _btnSaveSettings.Top = y;
+            _btnSaveSettings.Click += async (s, e) => await SaveSettingsAsync();
+            card.Controls.Add(_btnSaveSettings);
+            y += 56;
+
+            // Set final card height so scrollbar triggers when window is small
+            card.Height = y + 24;
+
+            scroller.Controls.Add(card);
+
+            // Keep card width in sync with the scroller's client width
+            scroller.Resize += (s, e) =>
+            {
+                int availW = scroller.ClientSize.Width - scroller.Padding.Horizontal;
+                if (availW < 400) availW = 400;   // minimum
+                card.Width = availW;
+            };
+
+            page.Controls.Add(scroller);
+            return page;
+        }
+
+        // ============================================================
+        // TIERS TAB
+        // ============================================================
+        private TabPage BuildTiersTab()
+        {
+            var page = new TabPage("Tiers")
+            {
+                BackColor = Colors.Background,
+                Padding = new Padding(24, 20, 24, 20)
+            };
+
+            var toolbar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 54,
+                BackColor = Colors.Background
+            };
+
+            _btnNewTier = MakePrimaryButton("+ New Tier");
+            _btnNewTier.Left = 0; _btnNewTier.Top = 8;
+            _btnNewTier.Click += (s, e) => ShowTierEditor(0);
+
+            _btnEditTier = MakeSecondaryButton("Edit");
+            _btnEditTier.Left = 150; _btnEditTier.Top = 8;
+            _btnEditTier.Click += (s, e) =>
+            {
+                if (SelectedTier is { } t) ShowTierEditor(t.LoyaltyTierId);
+            };
+
+            _btnDeleteTier = MakeDangerButton("Delete");
+            _btnDeleteTier.Left = 260; _btnDeleteTier.Top = 8;
+            _btnDeleteTier.Click += async (s, e) => await DeleteSelectedTierAsync();
+
+            _btnRefreshTiers = MakeSecondaryButton("Refresh");
+            _btnRefreshTiers.Left = 370; _btnRefreshTiers.Top = 8;
+            _btnRefreshTiers.Click += async (s, e) => await LoadTiersAsync();
+
+            toolbar.Controls.AddRange(new Control[]
+            { _btnNewTier, _btnEditTier, _btnDeleteTier, _btnRefreshTiers });
+
+            _dgvTiers = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AutoGenerateColumns = false,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false,
+                RowHeadersVisible = false,
+                BackgroundColor = Colors.Surface,
+                BorderStyle = BorderStyle.None,
+                ColumnHeadersHeight = 36,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Colors.Background,
+                    ForeColor = Colors.TextSecondary,
+                    Font = Typography.Small,
+                    Alignment = DataGridViewContentAlignment.MiddleLeft
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    ForeColor = Colors.TextBody,
+                    SelectionBackColor = Colors.PrimaryLight,
+                    SelectionForeColor = Colors.TextPrimary,
+                    Padding = new Padding(8, 0, 8, 0)
+                },
+                RowTemplate = { Height = 34 }
+            };
+
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Name", DataPropertyName = "TierName", Width = 200 });
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Points Range", DataPropertyName = "RangeText", Width = 150 });
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Discount", DataPropertyName = "DiscountText", Width = 100 });
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Multiplier", DataPropertyName = "MultiplierText", Width = 100 });
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Sort", DataPropertyName = "SortOrder", Width = 70 });
+            _dgvTiers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Status", DataPropertyName = "StatusText", Width = 100 });
+            _dgvTiers.CellDoubleClick += (s, e) =>
+            {
+                if (e.RowIndex >= 0 && SelectedTier is { } t)
+                    ShowTierEditor(t.LoyaltyTierId);
+            };
+
+            page.Controls.Add(_dgvTiers);
+            page.Controls.Add(toolbar);
+            return page;
+        }
+
+        // ============================================================
+        // CUSTOMERS TAB
+        // ============================================================
+        private TabPage BuildCustomersTab()
+        {
+            var page = new TabPage("Customers")
+            {
+                BackColor = Colors.Background,
+                Padding = new Padding(24, 20, 24, 20)
+            };
+
+            var toolbar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 54,
+                BackColor = Colors.Background
+            };
+
+            toolbar.Controls.Add(new Label
+            {
+                Text = "Search",
+                Left = 0, Top = 4, AutoSize = true,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary
+            });
+
+            _txtCustomerSearch = new TextBox
+            {
+                Left = 0, Top = 22, Width = 300,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            _txtCustomerSearch.TextChanged += (s, e) => ApplyCustomerFilter();
+            toolbar.Controls.Add(_txtCustomerSearch);
+
+            _btnRefreshCustomers = MakeSecondaryButton("Refresh");
+            _btnRefreshCustomers.Left = 320;
+            _btnRefreshCustomers.Top = 20;
+            _btnRefreshCustomers.Click += async (s, e) => await LoadCustomersAsync();
+            toolbar.Controls.Add(_btnRefreshCustomers);
+
+            _dgvCustomers = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AutoGenerateColumns = false,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false,
+                RowHeadersVisible = false,
+                BackgroundColor = Colors.Surface,
+                BorderStyle = BorderStyle.None,
+                ColumnHeadersHeight = 36,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Colors.Background,
+                    ForeColor = Colors.TextSecondary,
+                    Font = Typography.Small,
+                    Alignment = DataGridViewContentAlignment.MiddleLeft
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    ForeColor = Colors.TextBody,
+                    SelectionBackColor = Colors.PrimaryLight,
+                    SelectionForeColor = Colors.TextPrimary,
+                    Padding = new Padding(8, 0, 8, 0)
+                },
+                RowTemplate = { Height = 34 }
+            };
+
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Customer", DataPropertyName = "CustomerName", Width = 220 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Tier", DataPropertyName = "TierDisplay", Width = 110 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Current Points", DataPropertyName = "CurrentPoints", Width = 110 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Total Earned", DataPropertyName = "TotalPointsEarned", Width = 110 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Total Redeemed", DataPropertyName = "TotalPointsRedeemed", Width = 120 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Lifetime Spend", DataPropertyName = "LifetimeSpendText", Width = 130 });
+            _dgvCustomers.Columns.Add(new DataGridViewTextBoxColumn
+                { HeaderText = "Last Activity", DataPropertyName = "LastActivityText", Width = 150 });
+
+            _dgvCustomers.CellDoubleClick += async (s, e) =>
+            {
+                if (e.RowIndex >= 0 &&
+                    _dgvCustomers.CurrentRow?.DataBoundItem is LoyaltyCustomerModel c)
+                {
+                    await ShowCustomerDetailsAsync(c);
+                }
+            };
+
+            page.Controls.Add(_dgvCustomers);
+            page.Controls.Add(toolbar);
+            return page;
+        }
+
+        private async Task LoadCustomersAsync()
+        {
+            try
+            {
+                _customers = await _api.GetCustomersAsync();
+                ApplyCustomerFilter();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load customers.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ApplyCustomerFilter()
+        {
+            var q = (_txtCustomerSearch?.Text ?? string.Empty).Trim();
+            System.Collections.Generic.IEnumerable<LoyaltyCustomerModel> rows = _customers;
+            if (q.Length > 0)
+            {
+                var lower = q.ToLowerInvariant();
+                rows = rows.Where(c =>
+                    (c.CustomerName ?? "").ToLowerInvariant().Contains(lower) ||
+                    (c.CustomerCode ?? "").ToLowerInvariant().Contains(lower) ||
+                    (c.Phone ?? "").ToLowerInvariant().Contains(lower) ||
+                    (c.Email ?? "").ToLowerInvariant().Contains(lower));
+            }
+            _dgvCustomers.DataSource = null;
+            _dgvCustomers.DataSource = rows.ToList();
+        }
+
+        private async Task ShowCustomerDetailsAsync(LoyaltyCustomerModel c)
+        {
+            using var dlg = new LoyaltyCustomerDetailsDialog(_api, c);
+            dlg.ShowDialog(FindForm());
+        }
+
+        private LoyaltyTierModel? SelectedTier =>
+            _dgvTiers.CurrentRow?.DataBoundItem as LoyaltyTierModel;
+
+        // ============================================================
+        // HELPERS — labels, inputs, buttons
+        // ============================================================
+        private static Label HeaderLabel(string text, int top) => new()
+        {
+            Text = text,
+            Left = 28, Top = top, AutoSize = true,
+            Font = Typography.H3,
+            ForeColor = Colors.TextPrimary
+        };
+
+        private static Label SubLabel(string text, int top) => new()
+        {
+            Text = text,
+            Left = 28, Top = top, AutoSize = true,
+            Font = Typography.Small,
+            ForeColor = Colors.TextSecondary
+        };
+
+        private static Label FieldLabel(string text, int top) => new()
+        {
+            Text = text,
+            Left = 28, Top = top, AutoSize = true,
+            Font = Typography.Small,
+            ForeColor = Colors.TextBody
+        };
+
+        private static Label InlineHint(string text, int left, int top) => new()
+        {
+            Text = text,
+            Left = left, Top = top, AutoSize = true,
+            Font = Typography.Small,
+            ForeColor = Colors.TextMuted
+        };
+
+        private static NumericUpDown MakeNum(int top, int width, decimal min, decimal max, int decimals) => new()
+        {
+            Left = 28, Top = top, Width = width,
+            Minimum = min, Maximum = max, DecimalPlaces = decimals,
+            Font = Typography.Body,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        private static Button MakePrimaryButton(string text) => new()
+        {
+            Text = text,
+            Width = 140, Height = 36,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Colors.Primary,
+            ForeColor = Color.White,
+            Font = Typography.Body,
+            Cursor = Cursors.Hand,
+            FlatAppearance = { BorderSize = 0 }
+        };
+
+        private static Button MakeSecondaryButton(string text) => new()
+        {
+            Text = text,
+            Width = 100, Height = 36,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Colors.Surface,
+            ForeColor = Colors.TextPrimary,
+            Font = Typography.Body,
+            Cursor = Cursors.Hand,
+            FlatAppearance = { BorderSize = 1, BorderColor = Colors.Border }
+        };
+
+        private static Button MakeDangerButton(string text) => new()
+        {
+            Text = text,
+            Width = 100, Height = 36,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Colors.Danger,
+            ForeColor = Color.White,
+            Font = Typography.Body,
+            Cursor = Cursors.Hand,
+            FlatAppearance = { BorderSize = 0 }
+        };
+
+        // ============================================================
+        // LOAD
+        // ============================================================
+        private async Task LoadAllAsync()
+        {
+            await LoadSettingsAsync();
+            await LoadTiersAsync();
+        }
+
+        private async Task LoadSettingsAsync()
+        {
+            try
+            {
+                var s = await _api.GetSettingsAsync();
+                if (s == null)
+                {
+                    // No settings yet — leave defaults
+                    _numPointsPerOrder.Value = 10;
+                    _numPointsPerDollar.Value = 1;
+                    _numRedeemRequired.Value = 100;
+                    _numRedeemDiscount.Value = 10;
+                    _chkExpiryEnabled.Checked = false;
+                    _chkActive.Checked = true;
+                }
+                else
+                {
+                    _numPointsPerOrder.Value = Clamp(s.PointsPerOrder, _numPointsPerOrder);
+                    _numPointsPerDollar.Value = Clamp(s.PointsPerDollar, _numPointsPerDollar);
+                    _numRedeemRequired.Value = Clamp(s.RedeemPointsRequired, _numRedeemRequired);
+                    _numRedeemDiscount.Value = Clamp(s.RedeemDiscountAmount, _numRedeemDiscount);
+                    _chkExpiryEnabled.Checked = s.PointsExpiryDays.HasValue;
+                    _numExpiryDays.Enabled = _chkExpiryEnabled.Checked;
+                    if (s.PointsExpiryDays.HasValue)
+                        _numExpiryDays.Value = Clamp(s.PointsExpiryDays.Value, _numExpiryDays);
+                    _chkActive.Checked = s.IsActive;
+                }
+
+                RenderActiveRuleBanner(s);
+                UpdatePreviews();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load loyalty settings.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static decimal Clamp(decimal v, NumericUpDown n)
+            => v < n.Minimum ? n.Minimum : (v > n.Maximum ? n.Maximum : v);
+
+        private async Task LoadTiersAsync()
+        {
+            try
+            {
+                _tiers = await _api.GetTiersAsync();
+                _dgvTiers.DataSource = null;
+                _dgvTiers.DataSource = _tiers;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load tiers.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void UpdatePreviews()
+        {
+            _lblEarnPreview.Text =
+                $"Earning: {_numPointsPerOrder.Value:0.##} pt per order + " +
+                $"{_numPointsPerDollar.Value:0.##} pt per PHP spent.";
+            _lblRedeemPreview.Text =
+                $"Redemption: {_numRedeemRequired.Value:0.##} points = " +
+                $"PHP {_numRedeemDiscount.Value:0.##} off.";
+
+            UpdateBannerDirtyState();
+        }
+
+        // ============================================================
+        // ACTIVE RULE BANNER
+        // ============================================================
+        private Panel BuildActiveRuleBanner(int top)
+        {
+            var panel = new Panel
+            {
+                Left = 28, Top = top, Width = 700, Height = 118,
+                BackColor = Colors.PrimaryLight,
+                Padding = new Padding(16, 12, 16, 12)
+            };
+
+            _bannerTitle = new Label
+            {
+                Text = "ACTIVE RULE",
+                Left = 16, Top = 12, AutoSize = true,
+                Font = Typography.Small,
+                ForeColor = Colors.Primary
+            };
+            panel.Controls.Add(_bannerTitle);
+
+            _bannerEarn = new Label
+            {
+                Left = 16, Top = 36, Width = 660, Height = 22,
+                Font = Typography.Body,
+                ForeColor = Colors.TextPrimary,
+                Text = "No rule saved yet."
+            };
+            panel.Controls.Add(_bannerEarn);
+
+            _bannerRedeem = new Label
+            {
+                Left = 16, Top = 60, Width = 660, Height = 22,
+                Font = Typography.Body,
+                ForeColor = Colors.TextPrimary
+            };
+            panel.Controls.Add(_bannerRedeem);
+
+            _bannerStatus = new Label
+            {
+                Left = 16, Top = 84, Width = 660, Height = 22,
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary
+            };
+            panel.Controls.Add(_bannerStatus);
+
+            return panel;
+        }
+
+        private void RenderActiveRuleBanner(LoyaltySettingModel? saved)
+        {
+            _savedSnapshot = saved;
+
+            if (saved == null)
+            {
+                _bannerPanel.BackColor = Colors.WarningLight;
+                _bannerTitle.Text = "ACTIVE RULE — none yet";
+                _bannerTitle.ForeColor = Colors.Warning;
+                _bannerEarn.Text = "No loyalty rule has been saved for this tenant.";
+                _bannerRedeem.Text = "Fill in the fields below and click Save Settings.";
+                _bannerStatus.Text = "";
+                return;
+            }
+
+            _bannerPanel.BackColor = Colors.PrimaryLight;
+            _bannerTitle.Text = "ACTIVE RULE (saved)";
+            _bannerTitle.ForeColor = Colors.Primary;
+
+            _bannerEarn.Text =
+                $"Earning:  {saved.PointsPerOrder:0.##} pt per order  +  " +
+                $"{saved.PointsPerDollar:0.##} pt per PHP spent";
+
+            _bannerRedeem.Text =
+                $"Redeem:  {saved.RedeemPointsRequired:0.##} points  =  " +
+                $"PHP {saved.RedeemDiscountAmount:0.##} off";
+
+            string expiry = saved.PointsExpiryDays.HasValue
+                ? $"expires after {saved.PointsExpiryDays} days"
+                : "never expires";
+            string status = saved.IsActive ? "Active" : "Inactive";
+            _bannerStatus.Text =
+                $"Expiry: {expiry}   |   Status: {status}   |   " +
+                $"Last updated: {saved.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
+        }
+
+        private void UpdateBannerDirtyState()
+        {
+            if (_savedSnapshot == null) return;
+
+            bool dirty =
+                _numPointsPerOrder.Value != _savedSnapshot.PointsPerOrder ||
+                _numPointsPerDollar.Value != _savedSnapshot.PointsPerDollar ||
+                _numRedeemRequired.Value != _savedSnapshot.RedeemPointsRequired ||
+                _numRedeemDiscount.Value != _savedSnapshot.RedeemDiscountAmount ||
+                (_chkExpiryEnabled.Checked
+                    ? (_numExpiryDays.Value != (_savedSnapshot.PointsExpiryDays ?? 0))
+                    : _savedSnapshot.PointsExpiryDays.HasValue) ||
+                _chkActive.Checked != _savedSnapshot.IsActive;
+
+            if (dirty)
+            {
+                _bannerPanel.BackColor = Colors.WarningLight;
+                _bannerTitle.Text = "ACTIVE RULE — unsaved changes below";
+                _bannerTitle.ForeColor = Colors.Warning;
+            }
+            else
+            {
+                _bannerPanel.BackColor = Colors.PrimaryLight;
+                _bannerTitle.Text = "ACTIVE RULE (saved)";
+                _bannerTitle.ForeColor = Colors.Primary;
+            }
+        }
+
+        // ============================================================
+        // SAVE
+        // ============================================================
+        private async Task SaveSettingsAsync()
+        {
+            _btnSaveSettings.Enabled = false;
+            try
+            {
+                var req = new UpdateLoyaltySettingRequest
+                {
+                    PointsPerOrder = _numPointsPerOrder.Value,
+                    PointsPerDollar = _numPointsPerDollar.Value,
+                    RedeemPointsRequired = _numRedeemRequired.Value,
+                    RedeemDiscountAmount = _numRedeemDiscount.Value,
+                    PointsExpiryDays = _chkExpiryEnabled.Checked
+                        ? (int?)_numExpiryDays.Value : null,
+                    IsActive = _chkActive.Checked
+                };
+
+                var updated = await _api.UpdateSettingsAsync(req);
+                if (updated == null)
+                {
+                    MessageBox.Show("Save failed. Check the API log for details.",
+                        "Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    MessageBox.Show("Loyalty settings saved.",
+                        "Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    await LoadSettingsAsync();
+                }
+            }
+            finally
+            {
+                _btnSaveSettings.Enabled = true;
+            }
+        }
+
+        // ============================================================
+        // TIER EDITOR
+        // ============================================================
+        private void ShowTierEditor(int tierId)
+        {
+            using var dlg = new LoyaltyTierDialog(_api, tierId);
+            if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+            {
+                _ = LoadTiersAsync();
+            }
+        }
+
+        private async Task DeleteSelectedTierAsync()
+        {
+            if (SelectedTier is not { } t) return;
+
+            if (MessageBox.Show(
+                $"Delete tier \"{t.TierName}\"?",
+                "Confirm Delete", MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes) return;
+
+            bool ok = await _api.DeleteTierAsync(t.LoyaltyTierId);
+            if (!ok)
+            {
+                MessageBox.Show(
+                    "This tier cannot be deleted — it is assigned to customers.",
+                    "Not Allowed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            await LoadTiersAsync();
+        }
+    }
+}
+
+
+
+

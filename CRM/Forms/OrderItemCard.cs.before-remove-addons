@@ -44,125 +44,6 @@ namespace CRM.WinForms.Forms
         public decimal MachineTotal { get; private set; }
         public decimal LineTotal { get; private set; }
 
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public bool IsEditMode { get; set; }
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public System.Collections.Generic.List<string> PreCheckedAddOns { get; set; } = new();
-
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public string? PreSetCategory { get; set; }
-
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public decimal? PreSetWeight { get; set; }
-
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public string CategoryName
-        {
-            get => (cmbCategory.SelectedItem as ComboItem)?.Text ?? "Clothes";
-            set
-            {
-                for (int i = 0; i < cmbCategory.Items.Count; i++)
-                {
-                    var item = cmbCategory.Items[i] as ComboItem;
-                    if (item != null && item.Text == value)
-                    {
-                        cmbCategory.SelectedIndex = i;
-                        return;
-                    }
-                }
-            }
-        }
-
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        [System.ComponentModel.Browsable(false)]
-        public decimal WeightKg
-        {
-            get => GetCurrentWeight();
-            set => numWeight.Value = value;
-        }
-
-        public System.Collections.Generic.List<string> GetCheckedAddOns()
-        {
-            return _addOnChecked.Where(kv => kv.Value).Select(kv => kv.Key).ToList();
-        }
-
-        public void ApplyEditMode()
-        {
-            if (!IsEditMode) return;
-            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[card.ApplyEditMode] IsEditMode={IsEditMode} PreSetCategory={PreSetCategory} PreSetWeight={PreSetWeight} categoryItems={cmbCategory.Items.Count} picked={cmbCategory.SelectedItem} weightValue={numWeight.Value}`r`n");
-
-            // Restore saved values BEFORE locking
-            if (!string.IsNullOrEmpty(PreSetCategory))
-                CategoryName = PreSetCategory;
-
-            if (PreSetWeight.HasValue)
-                WeightKg = PreSetWeight.Value;
-
-            // Lock the top fields
-            cmbCategory.Enabled = false;
-            cmbService.Enabled = false;
-            numWeight.Enabled = false;
-
-            // Lock any add-on that was already on the order
-            foreach (Control c in _pnlAddOns.Controls)
-            {
-                if (c is CheckBox chk && chk.Tag is string addOnName)
-                {
-                    if (PreCheckedAddOns.Contains(addOnName))
-                    {
-                        chk.Checked = true;
-                        chk.Enabled = false;
-                        _addOnChecked[addOnName] = true;
-                    }
-                }
-            }
-
-            Recalculate();
-        }
-
-        public int ServiceId
-        {
-            get
-            {
-                var s = cmbService.SelectedItem as ServiceItem;
-                return s?.Value ?? 0;
-            }
-        }
-
-        public decimal CurrentWeight => GetCurrentWeight();
-
-        // Hardcoded add-on catalog
-        private static readonly (string Name, decimal Price)[] AddOnCatalog = new[]
-        {
-            ("Fabcon 1",   10m),
-            ("Fabcon 2",   10m),
-            ("Fabcon 3",   10m),
-            ("Cologne 1",  10m),
-            ("Cologne 2",  10m),
-            ("Dry 10min",  45m),
-            ("Dry 20min",  60m),
-            ("Dry 30min",  70m),
-            ("Spin",       20m),
-        };
-
-        private readonly Dictionary<string, bool> _addOnChecked = new();
-        private FlowLayoutPanel _pnlAddOns = null!;
-
-
-        public int Loads
-        {
-            get
-            {
-                var (_, loads) = CalculateAutoValues(GetCurrentWeight());
-                return (int)loads;
-            }
-        }
-
         private int _itemNumber = 1;
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         [Browsable(false)]
@@ -190,7 +71,7 @@ namespace CRM.WinForms.Forms
 
         private void InitializeCard()
         {
-            Height = 380;
+            Height = 700;
             Dock = DockStyle.Top;
             BackColor = Color.White;
             BorderStyle = BorderStyle.FixedSingle;
@@ -207,6 +88,12 @@ namespace CRM.WinForms.Forms
             };
             Controls.Add(pnlHeader);
 
+            lblHeader.Text = $"Item #{ItemNumber}";
+            lblHeader.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+            lblHeader.ForeColor = Theme.PrimaryColor;
+            lblHeader.Location = new Point(0, 4);
+            lblHeader.AutoSize = true;
+            pnlHeader.Controls.Add(lblHeader);
 
             btnRemove.Text = "Remove Item";
             btnRemove.Size = new Size(110, 28);
@@ -249,7 +136,7 @@ namespace CRM.WinForms.Forms
             var pnlTopFields = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 60,
+                Height = 90,
                 BackColor = Color.Transparent
             };
             Controls.Add(pnlTopFields);
@@ -293,12 +180,13 @@ namespace CRM.WinForms.Forms
             // Auto-calc row (below fields, full width)
             var pnlAuto = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 36,
+                Location = new Point(0, 56),
+                Height = 32,
                 BackColor = Color.FromArgb(240, 248, 255),
                 BorderStyle = BorderStyle.FixedSingle,
-                Padding = new Padding(8, 0, 0, 0)
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
+            pnlAuto.Width = 1000;
 
             pnlAuto.Controls.Add(new Label
             {
@@ -328,84 +216,73 @@ namespace CRM.WinForms.Forms
                 Text = "Loads:",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Theme.TextDarkColor,
-                Location = new Point(340, 8),
+                Location = new Point(320, 8),
                 AutoSize = true
             });
-
-            lblLoad.Location = new Point(400, 6);
+            lblLoad.Location = new Point(370, 6);
             lblLoad.Size = new Size(150, 20);
+            lblLoad.Text = "0 load";
             lblLoad.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
             lblLoad.ForeColor = Theme.AccentColor;
             pnlAuto.Controls.Add(lblLoad);
 
-            Controls.Add(pnlAuto);
-
-            // ─── Add-Ons section (below top fields) ───
-            _pnlAddOns = new FlowLayoutPanel
+            pnlTopFields.Controls.Add(pnlAuto);
+            pnlTopFields.Resize += (s, e) =>
             {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = true,
-                BackColor = Color.Transparent,
-                Dock = DockStyle.Top,
-                Height = 140,
-                Padding = new Padding(0, 8, 0, 8)
+                pnlAuto.Width = pnlTopFields.Width;
             };
-            Controls.Add(_pnlAddOns);
-
-            // Title
-            _pnlAddOns.Controls.Add(new Label
-            {
-                Text = "Add-Ons:",
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                ForeColor = Theme.TextDarkColor,
-                Width = 65,
-                Height = 22,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = new Padding(0, 4, 6, 0)
-            });
-
-            // Checkboxes
-            foreach (var (name, price) in AddOnCatalog)
-            {
-                var chk = new CheckBox
-                {
-                    Text = $"{name}  PHP {price:N0}",
-                    Font = new Font("Segoe UI", 9F),
-                    ForeColor = Theme.TextDarkColor,
-                    AutoSize = true,
-                    Tag = name,
-                    Margin = new Padding(8, 4, 8, 4)
-                };
-                chk.CheckedChanged += (s, e) =>
-                {
-                    _addOnChecked[name] = chk.Checked;
-                    Recalculate();
-                };
-                _addOnChecked[name] = false;
-                _pnlAddOns.Controls.Add(chk);
-            }
 
             // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             // ADD-ONS AREA (Docked Fill) â€” Chemical (left) + Machine (right)
             // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // Add-on UI removed
-            // (was: pnlAddOns, pnlChemContainer, pnlMachContainer, splitAddOns)
+            var pnlAddOns = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0)
+            };
+            Controls.Add(pnlAddOns);
 
-            // BuildChemicalRows(); removed
-            // BuildMachineRows(); removed
+            var pnlChemContainer = new Panel
+            {
+                Dock = DockStyle.Left,
+                BackColor = Color.FromArgb(248, 249, 250),
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(8)
+            };
+            pnlAddOns.Controls.Add(pnlChemContainer);
 
+            pnlChemical.Dock = DockStyle.Fill;
+            pnlChemical.AutoScroll = false;
+            pnlChemical.BackColor = Color.FromArgb(248, 249, 250);
+            pnlChemContainer.Controls.Add(pnlChemical);
 
-            // Re-order controls so docking stacks top-to-bottom:
-            Controls.Remove(pnlHeader);
-            Controls.Remove(pnlTopFields);
-            Controls.Remove(pnlAuto);
-            Controls.Remove(_pnlAddOns);
-            Controls.Remove(pnlTotal);
-            Controls.Add(pnlTotal);
-            Controls.Add(_pnlAddOns);
-            Controls.Add(pnlAuto);
-            Controls.Add(pnlTopFields);
-            Controls.Add(pnlHeader);
+            var pnlMachContainer = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(248, 249, 250),
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(8)
+            };
+            pnlAddOns.Controls.Add(pnlMachContainer);
+
+            pnlMachine.Dock = DockStyle.Fill;
+            pnlMachine.AutoScroll = false;
+            pnlMachine.BackColor = Color.FromArgb(248, 249, 250);
+            pnlMachContainer.Controls.Add(pnlMachine);
+
+            Action splitAddOns = () =>
+            {
+                int half = pnlAddOns.ClientSize.Width / 2;
+                if (half < 120) half = 120;
+                pnlChemContainer.Width = half;
+            };
+            pnlAddOns.Resize += (s, e) => splitAddOns();
+            splitAddOns();
+
+            BuildChemicalRows();
+            BuildMachineRows();
+
 
             Recalculate();
         }
@@ -423,12 +300,116 @@ namespace CRM.WinForms.Forms
 
         private void BuildChemicalRows()
         {
-            // Add-on UI removed
+            pnlChemical.Controls.Clear();
+
+            pnlChemical.Controls.Add(new Label
+            {
+                Text = "Chemical Add-ons",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Theme.TextDarkColor,
+                Dock = DockStyle.Top,
+                Height = 24,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(4, 0, 0, 0)
+            });
+
+            if (_chemicals.Count == 0)
+            {
+                pnlChemical.Controls.Add(new Label
+                {
+                    Text = "None available",
+                    Font = Theme.SmallFont,
+                    ForeColor = Theme.TextLightColor,
+                    Dock = DockStyle.Top,
+                    Height = 22,
+                    Padding = new Padding(6, 2, 0, 0)
+                });
+                return;
+            }
+
+            // Add in reverse so the first item ends up on top after Dock=Top
+            for (int i = _chemicals.Count - 1; i >= 0; i--)
+            {
+                var c = _chemicals[i];
+                var chk = new CheckBox
+                {
+                    Text = $"{c.ServiceName}  -  PHP {c.BasePrice:N0}",
+                    Dock = DockStyle.Top,
+                    Height = 28,
+                    Padding = new Padding(6, 4, 0, 0),
+                    Font = Theme.BodyFont,
+                    ForeColor = Theme.TextDarkColor,
+                    BackColor = Color.Transparent,
+                    Checked = _chemQty.TryGetValue(c.ServiceId, out var q) && q > 0,
+                    Tag = c.ServiceId,
+                    AutoEllipsis = true
+                };
+                chk.CheckedChanged += (s, e) =>
+                {
+                    int id = (int)((CheckBox)s).Tag;
+                    _chemQty[id] = ((CheckBox)s).Checked ? 1 : 0;
+                    Recalculate();
+                };
+                pnlChemical.Controls.Add(chk);
+                chk.BringToFront();
+            }
+            System.IO.File.AppendAllText(@"C:\temp\order_debug.log", $"[chain] pnlChemical={pnlChemical.Bounds} pnlChemContainer={pnlChemical.Parent?.Bounds} pnlAddOns={pnlChemical.Parent?.Parent?.Bounds} card={pnlChemical.Parent?.Parent?.Parent?.Bounds} cardDock={pnlChemical.Parent?.Parent?.Parent?.Dock}`r`n");
         }
 
         private void BuildMachineRows()
         {
-            // Add-on UI removed
+            pnlMachine.Controls.Clear();
+
+            pnlMachine.Controls.Add(new Label
+            {
+                Text = "Machine Add-ons",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Theme.TextDarkColor,
+                Dock = DockStyle.Top,
+                Height = 24,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(4, 0, 0, 0)
+            });
+
+            if (_machines.Count == 0)
+            {
+                pnlMachine.Controls.Add(new Label
+                {
+                    Text = "None available",
+                    Font = Theme.SmallFont,
+                    ForeColor = Theme.TextLightColor,
+                    Dock = DockStyle.Top,
+                    Height = 22,
+                    Padding = new Padding(6, 2, 0, 0)
+                });
+                return;
+            }
+
+            for (int i = _machines.Count - 1; i >= 0; i--)
+            {
+                var m = _machines[i];
+                var chk = new CheckBox
+                {
+                    Text = $"{m.ServiceName}  -  PHP {m.BasePrice:N0}",
+                    Dock = DockStyle.Top,
+                    Height = 28,
+                    Padding = new Padding(6, 4, 0, 0),
+                    Font = Theme.BodyFont,
+                    ForeColor = Theme.TextDarkColor,
+                    BackColor = Color.Transparent,
+                    Checked = _machQty.TryGetValue(m.ServiceId, out var q) && q > 0,
+                    Tag = m.ServiceId,
+                    AutoEllipsis = true
+                };
+                chk.CheckedChanged += (s, e) =>
+                {
+                    int id = (int)((CheckBox)s).Tag;
+                    _machQty[id] = ((CheckBox)s).Checked ? 1 : 0;
+                    Recalculate();
+                };
+                pnlMachine.Controls.Add(chk);
+                chk.BringToFront();
+            }
         }
 
 
@@ -479,21 +460,25 @@ namespace CRM.WinForms.Forms
             lblDetergent.Text = $"{detergent:0.#} g";
             lblLoad.Text = $"{loads:0.#} load{(loads != 1 ? "s" : "")}";
 
-            decimal serviceLine = service.PricePerKg * loads;
+            decimal serviceLine = service.PricePerKg * weight;
 
-            // Add-ons total
-            decimal addOnsTotal = 0;
-            foreach (var (name, price) in AddOnCatalog)
-                if (_addOnChecked.TryGetValue(name, out var c) && c)
-                    addOnsTotal += price;
+            decimal chemTotal = 0;
+            foreach (var c in _chemicals)
+                if (_chemQty.TryGetValue(c.ServiceId, out int q))
+                    chemTotal += c.BasePrice * q;
+
+            decimal machTotal = 0;
+            foreach (var m in _machines)
+                if (_machQty.TryGetValue(m.ServiceId, out int q))
+                    machTotal += m.BasePrice * q;
 
             ServiceLineTotal = serviceLine;
-            ChemicalTotal = addOnsTotal;
-            MachineTotal = 0;
-            LineTotal = serviceLine + addOnsTotal;
+            ChemicalTotal = chemTotal;
+            MachineTotal = machTotal;
+            LineTotal = serviceLine + chemTotal + machTotal;
 
-            lblChemicalTotal.Text = $"Add-Ons: PHP {addOnsTotal:N2}";
-            lblMachineTotal.Text = "";
+            lblChemicalTotal.Text = $"PHP {chemTotal:N2}";
+            lblMachineTotal.Text = $"PHP {machTotal:N2}";
             lblLineTotal.Text = $"Line Total: PHP {LineTotal:N2}";
 
             ItemChanged?.Invoke(this, EventArgs.Empty);
@@ -522,8 +507,8 @@ namespace CRM.WinForms.Forms
             try
             {
                 _services = await serviceApi.GetAllAsync(serviceType: 1);
-                // add-ons removed
-                // add-ons removed
+                _chemicals = await serviceApi.GetAllAsync(serviceType: 2);
+                _machines = await serviceApi.GetAllAsync(serviceType: 3);
 
                 cmbService.Items.Clear();
                 foreach (var s in _services)
@@ -534,8 +519,8 @@ namespace CRM.WinForms.Forms
                 else
                     cmbService.Items.Add(new ServiceItem(0, "(no services available)", 0m));
 
-                // BuildChemicalRows(); removed
-                // BuildMachineRows(); removed
+                BuildChemicalRows();
+                BuildMachineRows();
 
                 System.Diagnostics.Debug.WriteLine($"[OrderItemCard] chemicals={_chemicals.Count}, machine={_machines.Count}");
                 System.Diagnostics.Debug.WriteLine($"[OrderItemCard] pnlChemical.Controls.Count={pnlChemical.Controls.Count}, pnlMachine.Controls.Count={pnlMachine.Controls.Count}");

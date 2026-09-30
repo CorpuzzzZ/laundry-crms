@@ -1,0 +1,53 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using CRM.WinForms.Config;
+using CRM.WinForms.Models;
+
+namespace CRM.WinForms.Services
+{
+    public class LoyaltyApiService
+    {
+        private readonly ApiClient _api;
+
+        public LoyaltyApiService(ApiClient api)
+        {
+            _api = api;
+        }
+
+        // ----- SETTINGS -----
+        public Task<LoyaltySettingModel?> GetSettingsAsync()
+            => _api.GetDataAsync<LoyaltySettingModel>(
+                AppConfig.ApiV1Url("loyalty/settings"));
+
+        public Task<LoyaltySettingModel?> UpdateSettingsAsync(UpdateLoyaltySettingRequest req)
+            => _api.PutDataAsync<LoyaltySettingModel>(
+                AppConfig.ApiV1Url("loyalty/settings"), req);
+
+        // ----- TIERS -----
+        public async Task<List<LoyaltyTierModel>> GetTiersAsync()
+        {
+            try
+            {
+                var tiers = await _api.GetDataAsync<List<LoyaltyTierModel>>(
+                    AppConfig.ApiV1Url("loyalty/tiers"));
+                return tiers ?? new List<LoyaltyTierModel>();
+            }
+            catch
+            {
+                return new List<LoyaltyTierModel>();
+            }
+        }
+
+        public Task<LoyaltyTierModel?> CreateTierAsync(CreateLoyaltyTierRequest req)
+            => _api.PostDataAsync<LoyaltyTierModel>(
+                AppConfig.ApiV1Url("loyalty/tiers"), req);
+
+        public Task<LoyaltyTierModel?> UpdateTierAsync(int id, UpdateLoyaltyTierRequest req)
+            => _api.PutDataAsync<LoyaltyTierModel>(
+                AppConfig.ApiV1Url($"loyalty/tiers/{id}"), req);
+
+        public Task<bool> DeleteTierAsync(int id)
+            => _api.DeleteDataAsync(AppConfig.ApiV1Url($"loyalty/tiers/{id}"));
+    }
+}

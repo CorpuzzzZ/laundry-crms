@@ -1,0 +1,943 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+using CRM.WinForms.UI;
+using CRM.UI;
+using CRM.UI.Controls;
+
+namespace CRM.WinForms.Forms
+{
+    /// <summary>
+    /// Full-page payment processor. Loads an order, shows the billing breakdown,
+    /// accepts Cash or GCash payment, and generates an on-screen receipt.
+    /// </summary>
+    public class PaymentView : UserControl
+    {
+        public event EventHandler? Saved;
+        public event EventHandler? Cancelled;
+
+        private readonly OrderApiService _orderService = new();
+        private readonly LoyaltyApiService _loyaltyService = new(ApiClient.Instance);
+        private readonly int _orderId;
+
+        private OrderModel? _order;
+        private List<PaymentMethodLookup> _methods = new();
+
+        // Loyalty redemption
+        private RedeemableInfoModel? _redeemableInfo;
+        private CheckBox chkRedeem = null!;
+        private Label lblLoyaltyInfo = null!;
+        private Label lblLoyaltyDiscount = null!;
+        private decimal _appliedDiscount = 0m;
+
+        // Header
+        private Button btnBack = null!;
+        private Label lblTitle = null!;
+
+        // Order summary labels
+        private Label lblOrderNumber = null!;
+        private Label lblCustomer = null!;
+        private Label lblOrderDate = null!;
+        private Label lblStatus = null!;
+
+        // Billing labels
+        private Label lblSubtotal = null!;
+        private Label lblAddOns = null!;
+        private Label lblTotal = null!;
+        private Label lblPaid = null!;
+        private Label lblAmountDue = null!;
+
+        // Payment method
+        private RadioButton rbCash = null!;
+        private RadioButton rbGCash = null!;
+
+        // Payment details
+        private NumericUpDown numAmountToPay = null!;
+        private Label lblTenderedCaption = null!;
+        private NumericUpDown numTendered = null!;
+        private Label lblChange = null!;
+        private Label lblReferenceCaption = null!;
+        private TextBox txtReference = null!;
+        private TextBox txtNotes = null!;
+
+        // Footer
+        private Button btnCancel = null!;
+        private Button btnConfirm = null!;
+
+        public PaymentView(int orderId)
+        {
+            _orderId = orderId;
+            InitializeComponent();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = Colors.Background;
+
+            // ─── FOOTER ───
+            var pnlFooter = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 70,
+                BackColor = Colors.Surface,
+                Padding = new Padding(Spacing.Xl, 0, Spacing.Xl, 0)
+            };
+            pnlFooter.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawLine(pen, 0, 0, pnlFooter.Width, 0);
+            };
+
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                Size = new Size(120, 42),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnCancel.FlatAppearance.BorderColor = Colors.Border;
+            btnCancel.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            pnlFooter.Controls.Add(btnCancel);
+
+            btnConfirm = new Button
+            {
+                Text = "Confirm Payment",
+                Size = new Size(170, 42),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Success,
+                ForeColor = Color.White,
+                Font = Typography.BodyBold,
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnConfirm.FlatAppearance.BorderSize = 0;
+            btnConfirm.Click += async (s, e) => await ConfirmPaymentAsync();
+            pnlFooter.Controls.Add(btnConfirm);
+
+            pnlFooter.Resize += (s, e) =>
+            {
+                btnConfirm.Location = new Point(pnlFooter.Width - btnConfirm.Width - Spacing.Xl, 14);
+                btnCancel.Location = new Point(btnConfirm.Left - btnCancel.Width - Spacing.Sm, 14);
+            };
+
+            Controls.Add(pnlFooter);
+
+            // ─── HEADER ───
+            var pnlPageHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 64,
+                BackColor = Colors.Surface
+            };
+            pnlPageHeader.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Colors.Border);
+                e.Graphics.DrawLine(pen, 0, pnlPageHeader.Height - 1, pnlPageHeader.Width, pnlPageHeader.Height - 1);
+            };
+
+            btnBack = new Button
+            {
+                Text = "\u2190 Back to Orders",
+                Location = new Point(Spacing.Xl, 16),
+                Size = new Size(180, 32),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextSecondary,
+                Font = Typography.Body,
+                Cursor = Cursors.Hand
+            };
+            btnBack.FlatAppearance.BorderColor = Colors.Border;
+            btnBack.Click += (s, e) => Cancelled?.Invoke(this, EventArgs.Empty);
+            pnlPageHeader.Controls.Add(btnBack);
+
+            lblTitle = new Label
+            {
+                Text = "Process Payment",
+                Font = Typography.H1,
+                ForeColor = Colors.TextPrimary,
+                AutoSize = true,
+                Location = new Point(230, 20)
+            };
+            pnlPageHeader.Controls.Add(lblTitle);
+
+            Controls.Add(pnlPageHeader);
+
+            // ─── BODY ───
+            var pnlBody = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Colors.Background,
+                Padding = new Padding(Spacing.Xl, Spacing.Lg, Spacing.Xl, Spacing.Lg)
+            };
+            Controls.Add(pnlBody);
+            pnlBody.BringToFront();
+
+            var pnlStack = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 900,
+                BackColor = Colors.Background
+            };
+            pnlBody.Controls.Add(pnlStack);
+
+            // ─── ORDER SUMMARY CARD ───
+            var cardOrder = new RoundedCard
+            {
+                Dock = DockStyle.Top,
+                Height = 180,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = false,
+                Margin = new Padding(0, 0, 0, Spacing.Xl)
+            };
+            pnlStack.Controls.Add(cardOrder);
+            BuildOrderCard(cardOrder);
+
+            // ─── BILLING CARD ───
+            var cardBilling = new RoundedCard
+            {
+                Dock = DockStyle.Top,
+                Height = 420,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = false,
+                Margin = new Padding(0, 0, 0, Spacing.Xl)
+            };
+            pnlStack.Controls.Add(cardBilling);
+            BuildBillingCard(cardBilling);
+
+            // ─── PAYMENT CARD ───
+            var cardPayment = new RoundedCard
+            {
+                Dock = DockStyle.Top,
+                Height = 300,
+                Padding = new Padding(Spacing.Xl),
+                CornerRadius = 8,
+                FillColor = Colors.Surface,
+                BorderColor = Colors.Border,
+                ShowShadow = false,
+                Margin = new Padding(0, 0, 0, Spacing.Lg)
+            };
+            pnlStack.Controls.Add(cardPayment);
+            BuildPaymentCard(cardPayment);
+        }
+
+        private void BuildOrderCard(RoundedCard card)
+        {
+            int cx = Spacing.Lg;
+            int y = Spacing.Lg;
+
+            card.Controls.Add(new Label
+            {
+                Text = "ORDER SUMMARY",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(cx, y),
+                AutoSize = true
+            });
+            y += 32;
+
+            card.Controls.Add(MakeLabel("Order #", cx, y));
+            lblOrderNumber = MakeValue(cx, y + 22);
+            card.Controls.Add(lblOrderNumber);
+
+            card.Controls.Add(MakeLabel("Customer", cx + 320, y));
+            lblCustomer = MakeValue(cx + 320, y + 22);
+            card.Controls.Add(lblCustomer);
+
+            y += 64;
+
+            card.Controls.Add(MakeLabel("Order Date", cx, y));
+            lblOrderDate = MakeValue(cx, y + 22);
+            card.Controls.Add(lblOrderDate);
+
+            card.Controls.Add(MakeLabel("Status", cx + 320, y));
+            lblStatus = MakeValue(cx + 320, y + 22);
+            card.Controls.Add(lblStatus);
+        }
+
+        private void BuildBillingCard(RoundedCard card)
+        {
+            int cx = Spacing.Lg;
+            int y = Spacing.Lg;
+
+            card.Controls.Add(new Label
+            {
+                Text = "BILLING BREAKDOWN",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(cx, y),
+                AutoSize = true
+            });
+            y += 32;
+
+            lblSubtotal = AddBillRow(card, "Items Subtotal", y);
+            lblAddOns = AddBillRow(card, "Add-Ons", y + 34);
+            lblTotal = AddBillRow(card, "TOTAL", y + 68, bold: true);
+            lblPaid = AddBillRow(card, "Already Paid", y + 108);
+            lblAmountDue = AddBillRow(card, "AMOUNT DUE", y + 142, bold: true, highlight: true);
+
+            // ---- Loyalty redemption section ----
+            int ly = y + 196;
+            card.Controls.Add(new Label
+            {
+                Text = "LOYALTY",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(cx, ly),
+                AutoSize = true
+            });
+            ly += 26;
+
+            lblLoyaltyInfo = new Label
+            {
+                Text = "Loading loyalty info...",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, ly),
+                AutoSize = true,
+                MaximumSize = new Size(380, 0)
+            };
+            card.Controls.Add(lblLoyaltyInfo);
+            ly += 30;
+
+            chkRedeem = new CheckBox
+            {
+                Text = "Apply loyalty discount",
+                Font = Typography.Body,
+                ForeColor = Colors.TextPrimary,
+                Location = new Point(cx, ly),
+                AutoSize = true,
+                Enabled = false,
+                Visible = false
+            };
+            chkRedeem.CheckedChanged += (s, e) => UpdateAmountDue();
+            card.Controls.Add(chkRedeem);
+            ly += 28;
+
+            lblLoyaltyDiscount = new Label
+            {
+                Text = "",
+                Font = Typography.BodyBold,
+                ForeColor = Colors.Success,
+                Location = new Point(cx + 20, ly),
+                AutoSize = true,
+                Visible = false
+            };
+            card.Controls.Add(lblLoyaltyDiscount);
+        }
+
+        private void BuildPaymentCard(RoundedCard card)
+        {
+            int cx = Spacing.Lg;
+            int y = Spacing.Lg;
+
+            card.Controls.Add(new Label
+            {
+                Text = "PAYMENT METHOD",
+                Font = Typography.TinyUpper,
+                ForeColor = Colors.TextMuted,
+                Location = new Point(cx, y),
+                AutoSize = true
+            });
+            y += 30;
+
+            rbCash = new RadioButton
+            {
+                Text = "Cash",
+                Font = Typography.BodyBold,
+                ForeColor = Colors.TextPrimary,
+                Location = new Point(cx, y),
+                AutoSize = true,
+                Checked = true
+            };
+            rbCash.CheckedChanged += (s, e) => OnMethodChanged();
+            card.Controls.Add(rbCash);
+
+            rbGCash = new RadioButton
+            {
+                Text = "GCash",
+                Font = Typography.BodyBold,
+                ForeColor = Colors.TextPrimary,
+                Location = new Point(cx + 120, y),
+                AutoSize = true
+            };
+            rbGCash.CheckedChanged += (s, e) => OnMethodChanged();
+            card.Controls.Add(rbGCash);
+
+            y += 42;
+
+            // Amount to Pay
+            card.Controls.Add(new Label
+            {
+                Text = "Amount to Pay",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, y),
+                AutoSize = true
+            });
+
+            numAmountToPay = new NumericUpDown
+            {
+                Location = new Point(cx, y + 22),
+                Width = 180,
+                DecimalPlaces = 2,
+                Minimum = 0,
+                Maximum = 1000000,
+                ThousandsSeparator = true,
+                Font = Typography.Body,
+                Enabled = false
+            };
+            numAmountToPay.ValueChanged += (s, e) => UpdateChange();
+            card.Controls.Add(numAmountToPay);
+
+            // Amount Tendered (Cash)
+            lblTenderedCaption = new Label
+            {
+                Text = "Amount Tendered",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx + 220, y),
+                AutoSize = true
+            };
+            card.Controls.Add(lblTenderedCaption);
+
+            numTendered = new NumericUpDown
+            {
+                Location = new Point(cx + 220, y + 22),
+                Width = 180,
+                DecimalPlaces = 2,
+                Minimum = 0,
+                Maximum = 1000000,
+                ThousandsSeparator = true,
+                Font = Typography.Body
+            };
+            numTendered.ValueChanged += (s, e) => UpdateChange();
+            card.Controls.Add(numTendered);
+
+            // Change
+            lblChange = new Label
+            {
+                Text = "Change: PHP 0.00",
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                ForeColor = Colors.Success,
+                Location = new Point(cx + 440, y + 22),
+                Size = new Size(220, 26),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            card.Controls.Add(lblChange);
+
+            y += 70;
+
+            // Reference (GCash)
+            lblReferenceCaption = new Label
+            {
+                Text = "GCash Reference # (optional)",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, y),
+                AutoSize = true,
+                Visible = false
+            };
+            card.Controls.Add(lblReferenceCaption);
+
+            txtReference = new TextBox
+            {
+                Location = new Point(cx, y + 22),
+                Width = 300,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle,
+                Visible = false
+            };
+            card.Controls.Add(txtReference);
+
+            y += 70;
+
+            // Notes
+            card.Controls.Add(new Label
+            {
+                Text = "Notes (optional)",
+                Font = Typography.Small,
+                ForeColor = Colors.TextSecondary,
+                Location = new Point(cx, y),
+                AutoSize = true
+            });
+
+            txtNotes = new TextBox
+            {
+                Location = new Point(cx, y + 22),
+                Width = 660,
+                Height = 32,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            card.Controls.Add(txtNotes);
+        }
+
+        private Label AddBillRow(Control parent, string caption, int y, bool bold = false, bool highlight = false)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = caption,
+                Font = bold ? new Font("Segoe UI", 10F, FontStyle.Bold) : Typography.Body,
+                ForeColor = highlight ? Colors.Primary : (bold ? Colors.TextPrimary : Colors.TextSecondary),
+                Location = new Point(Spacing.Lg, y),
+                AutoSize = true
+            });
+
+            var value = new Label
+            {
+                Text = "PHP 0.00",
+                Font = bold ? new Font("Segoe UI", 11F, FontStyle.Bold) : Typography.BodyBold,
+                ForeColor = highlight ? Colors.Primary : Colors.TextPrimary,
+                Location = new Point(Spacing.Lg + 400, y),
+                Width = 300,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleRight
+            };
+            parent.Controls.Add(value);
+            return value;
+        }
+
+        private static Label MakeLabel(string text, int x, int y) => new Label
+        {
+            Text = text,
+            Font = Typography.Small,
+            ForeColor = Colors.TextSecondary,
+            Location = new Point(x, y),
+            AutoSize = true
+        };
+
+        private static Label MakeValue(int x, int y) => new Label
+        {
+            Text = "-",
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            ForeColor = Colors.TextPrimary,
+            Location = new Point(x, y),
+            AutoSize = true
+        };
+
+        private async Task LoadAsync()
+        {
+            try
+            {
+                _order = await _orderService.GetOrderByIdAsync(_orderId);
+
+                if (_order == null)
+                {
+                    MessageBox.Show($"Order {_orderId} not found.", "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Cancelled?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                // Load payment methods
+                _methods = await _orderService.GetPaymentMethodsAsync();
+
+                ApplyOrderToUi();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load order: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void ApplyOrderToUi()
+        {
+            if (_order == null) return;
+
+            lblOrderNumber.Text = _order.OrderNumber;
+            lblCustomer.Text = $"{_order.CustomerName}  ({_order.CustomerPhone})";
+            lblOrderDate.Text = _order.OrderDate.ToString("yyyy-MM-dd HH:mm");
+            lblStatus.Text = _order.StatusName;
+
+            // Billing
+            decimal subtotal = _order.Items?.Sum(i => i.LineTotal) ?? 0m;
+            decimal addOns = 0m;
+            foreach (var item in _order.Items ?? new List<OrderItemModel>())
+            {
+                // Add-on prices are hardcoded client-side
+                addOns += GetAddOnsTotal(item.AddOns);
+            }
+
+            decimal total = _order.TotalAmount;
+            decimal paid = _order.Payments?.Sum(p => p.Amount) ?? 0m;
+            decimal due = Math.Max(0, total - paid);
+
+            lblSubtotal.Text = $"PHP {subtotal:N2}";
+            lblAddOns.Text = $"PHP {addOns:N2}";
+            lblTotal.Text = $"PHP {total:N2}";
+            lblPaid.Text = $"PHP {paid:N2}";
+            lblAmountDue.Text = $"PHP {due:N2}";
+
+            // Amount to Pay defaults to remaining due
+            numAmountToPay.Value = Math.Min(due, numAmountToPay.Maximum);
+            numAmountToPay.Enabled = due > 0;
+            numTendered.Value = Math.Min(due, numTendered.Maximum);
+
+            UpdateChange();
+
+            // Load loyalty redemption info (fire-and-forget)
+            _ = LoadLoyaltyAsync();
+
+            // Hide confirm if fully paid
+            if (due <= 0)
+            {
+                btnConfirm.Enabled = false;
+                btnConfirm.Text = "Paid";
+            }
+        }
+
+        private static decimal GetAddOnsTotal(List<string>? addOns)
+        {
+            if (addOns == null || addOns.Count == 0) return 0m;
+
+            decimal total = 0m;
+            foreach (var name in addOns)
+            {
+                total += name switch
+                {
+                    "Fabcon 1" => 10m,
+                    "Fabcon 2" => 10m,
+                    "Fabcon 3" => 10m,
+                    "Cologne 1" => 10m,
+                    "Cologne 2" => 10m,
+                    "Dry 10min" => 45m,
+                    "Dry 20min" => 60m,
+                    "Dry 30min" => 70m,
+                    "Spin" => 20m,
+                    _ => 0m
+                };
+            }
+            return total;
+        }
+
+        private void OnMethodChanged()
+        {
+            bool isCash = rbCash.Checked;
+
+            lblTenderedCaption.Visible = isCash;
+            numTendered.Visible = isCash;
+            lblChange.Visible = isCash;
+
+            lblReferenceCaption.Visible = !isCash;
+            txtReference.Visible = !isCash;
+
+            UpdateChange();
+        }
+
+        private void UpdateChange()
+        {
+            decimal toPay = numAmountToPay.Value;
+            decimal tendered = numTendered.Value;
+            decimal change = tendered - toPay;
+
+            if (rbCash.Checked)
+            {
+                lblChange.Text = change >= 0
+                    ? $"Change: PHP {change:N2}"
+                    : "Change: (insufficient)";
+                lblChange.ForeColor = change >= 0 ? Colors.Success : Colors.Danger;
+            }
+        }
+
+        private async Task LoadLoyaltyAsync()
+        {
+            if (_order == null) return;
+            try
+            {
+                decimal orderTotal = _order.TotalAmount;
+                int customerId = _order.CustomerId;
+
+                _redeemableInfo = await _loyaltyService.GetRedeemableInfoAsync(customerId, orderTotal);
+
+                if (_redeemableInfo == null)
+                {
+                    lblLoyaltyInfo.Text = "Loyalty program is not active.";
+                    chkRedeem.Visible = false;
+                    lblLoyaltyDiscount.Visible = false;
+                    return;
+                }
+
+                if (_redeemableInfo.CurrentPoints <= 0)
+                {
+                    lblLoyaltyInfo.Text = "No loyalty points available.";
+                    chkRedeem.Visible = false;
+                    lblLoyaltyDiscount.Visible = false;
+                    return;
+                }
+
+                if (!_redeemableInfo.CanRedeem)
+                {
+                    lblLoyaltyInfo.Text =
+                        $"Available: {_redeemableInfo.CurrentPoints} pts  " +
+                        $"(need {_redeemableInfo.PointsRequired} to redeem)";
+                    chkRedeem.Visible = false;
+                    lblLoyaltyDiscount.Visible = false;
+                    return;
+                }
+
+                lblLoyaltyInfo.Text =
+                    $"Available: {_redeemableInfo.CurrentPoints} pts  |  " +
+                    $"Redeemable: {_redeemableInfo.MaxRedeemablePoints} pts = PHP {_redeemableInfo.MaxDiscount:N2} off";
+
+                chkRedeem.Text = $"Apply loyalty discount (PHP {_redeemableInfo.MaxDiscount:N2} off)";
+                chkRedeem.Visible = true;
+                chkRedeem.Enabled = true;
+                chkRedeem.Checked = false;
+                lblLoyaltyDiscount.Visible = false;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PaymentView.LoadLoyalty] {ex}");
+                lblLoyaltyInfo.Text = "Could not load loyalty info.";
+                chkRedeem.Visible = false;
+                lblLoyaltyDiscount.Visible = false;
+            }
+        }
+
+        private void UpdateAmountDue()
+        {
+            if (_order == null) return;
+
+            decimal total = _order.TotalAmount;
+            decimal paid = _order.Payments?.Sum(p => p.Amount) ?? 0m;
+
+            _appliedDiscount = 0m;
+            if (chkRedeem.Checked && _redeemableInfo != null)
+            {
+                _appliedDiscount = _redeemableInfo.MaxDiscount;
+                lblLoyaltyDiscount.Text = $"- PHP {_appliedDiscount:N2}";
+                lblLoyaltyDiscount.Visible = true;
+            }
+            else
+            {
+                lblLoyaltyDiscount.Visible = false;
+            }
+
+            decimal effectiveTotal = total - _appliedDiscount;
+            decimal due = Math.Max(0, effectiveTotal - paid);
+
+            lblAmountDue.Text = $"PHP {due:N2}";
+            numAmountToPay.Value = Math.Min(due, numAmountToPay.Maximum);
+            numAmountToPay.Enabled = due > 0;
+            numTendered.Value = Math.Min(due, numTendered.Maximum);
+
+            UpdateChange();
+        }
+
+        private async Task ConfirmPaymentAsync()
+        {
+            if (_order == null) return;
+
+            decimal toPay = numAmountToPay.Value;
+
+            if (toPay <= 0)
+            {
+                MessageBox.Show("Amount to pay must be greater than zero.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Determine payment method
+            var method = _methods.FirstOrDefault(m =>
+                (rbCash.Checked && m.MethodCode.Equals("CASH", StringComparison.OrdinalIgnoreCase)) ||
+                (rbGCash.Checked && m.MethodCode.Equals("GCASH", StringComparison.OrdinalIgnoreCase)));
+
+            if (method == null)
+            {
+                MessageBox.Show($"Payment method not configured.",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // For cash, ensure tendered >= toPay
+            if (rbCash.Checked && numTendered.Value < toPay)
+            {
+                MessageBox.Show("Amount tendered is less than the amount to pay.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var request = new CreateOrderPaymentRequest
+            {
+                PaymentMethodId = method.PaymentMethodId,
+                Amount = toPay,
+                ReferenceNumber = rbGCash.Checked && !string.IsNullOrWhiteSpace(txtReference.Text)
+                    ? txtReference.Text.Trim()
+                    : null,
+                Notes = string.IsNullOrWhiteSpace(txtNotes.Text) ? null : txtNotes.Text.Trim(),
+                ReceivedByName = SessionManager.CurrentUser?.FullName,
+                LoyaltyPointsToRedeem = chkRedeem.Checked && _redeemableInfo != null
+                    ? _redeemableInfo.MaxRedeemablePoints
+                    : 0
+            };
+
+            btnConfirm.Enabled = false;
+            btnConfirm.Text = "Processing...";
+
+            try
+            {
+                var (success, payment, error) = await _orderService.AddPaymentAsync(_orderId, request);
+
+                if (success && payment != null)
+                {
+                    ShowReceipt(payment, rbCash.Checked ? numTendered.Value : toPay);
+                    Saved?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    MessageBox.Show($"Failed to record payment: {error}",
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            finally
+            {
+                btnConfirm.Enabled = true;
+                btnConfirm.Text = "Confirm Payment";
+            }
+        }
+
+        private void ShowReceipt(OrderPaymentModel payment, decimal tendered)
+        {
+            var receipt = new Form
+            {
+                Text = "Payment Receipt",
+                Size = new Size(500, 640),
+                StartPosition = FormStartPosition.CenterParent,
+                BackColor = Colors.Surface,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+
+            var lblHeader = new Label
+            {
+                Text = "LAUNDRY CRM — RECEIPT",
+                Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+                ForeColor = Colors.TextPrimary,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Top,
+                Height = 50
+            };
+            receipt.Controls.Add(lblHeader);
+
+            var txt = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                Dock = DockStyle.Fill,
+                Font = new Font("Consolas", 10F),
+                BackColor = Colors.Surface,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("========================================");
+            sb.AppendLine("           PAYMENT RECEIPT              ");
+            sb.AppendLine("========================================");
+            sb.AppendLine();
+            sb.AppendLine($"Receipt #  : {payment.OrderPaymentId}");
+            sb.AppendLine($"Order #    : {_order?.OrderNumber}");
+            sb.AppendLine($"Customer   : {_order?.CustomerName}");
+            sb.AppendLine($"Phone      : {_order?.CustomerPhone}");
+            sb.AppendLine($"Date       : {payment.PaymentDate:yyyy-MM-dd HH:mm}");
+            sb.AppendLine();
+            sb.AppendLine("----------------------------------------");
+            sb.AppendLine($"Method     : {payment.PaymentMethodName}");
+            if (!string.IsNullOrWhiteSpace(payment.ReferenceNumber))
+                sb.AppendLine($"Reference  : {payment.ReferenceNumber}");
+            sb.AppendLine("----------------------------------------");
+            sb.AppendLine($"Amount Paid: PHP {payment.Amount:N2}");
+            if (payment.PaymentMethodName.Equals("Cash", StringComparison.OrdinalIgnoreCase))
+            {
+                decimal change = tendered - payment.Amount;
+                sb.AppendLine($"Tendered   : PHP {tendered:N2}");
+                sb.AppendLine($"Change     : PHP {change:N2}");
+            }
+            sb.AppendLine();
+            sb.AppendLine("----------------------------------------");
+            sb.AppendLine($"Status     : {payment.Status}");
+            if (!string.IsNullOrWhiteSpace(payment.Notes))
+                sb.AppendLine($"Notes      : {payment.Notes}");
+            sb.AppendLine();
+            sb.AppendLine("========================================");
+            sb.AppendLine("     Thank you for your business!       ");
+            sb.AppendLine("========================================");
+
+            txt.Text = sb.ToString();
+
+            var pnlButtons = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 60,
+                Padding = new Padding(20, 10, 20, 10)
+            };
+
+            var btnPrint = new Button
+            {
+                Text = "Print",
+                Width = 120,
+                Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                DialogResult = DialogResult.OK,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left
+            };
+            btnPrint.FlatAppearance.BorderColor = Colors.Border;
+            btnPrint.Click += (s, e) => { /* placeholder */ };
+
+            var btnClose = new Button
+            {
+                Text = "Close",
+                Width = 120,
+                Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                DialogResult = DialogResult.OK,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnClose.FlatAppearance.BorderSize = 0;
+
+            pnlButtons.Controls.Add(btnPrint);
+            pnlButtons.Controls.Add(btnClose);
+            pnlButtons.Resize += (s, e) =>
+            {
+                btnPrint.Location = new Point(20, 12);
+                btnClose.Location = new Point(pnlButtons.Width - btnClose.Width - 20, 12);
+            };
+
+            receipt.Controls.Add(txt);
+            receipt.Controls.Add(pnlButtons);
+            txt.BringToFront();
+
+            receipt.ShowDialog(this.FindForm());
+        }
+    }
+}
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -16,7 +16,6 @@ namespace CRM.UI.Controls
 
         private readonly int _customerId;
         private readonly CustomerInteractionApiService _interactionService;
-        private readonly LoyaltyApiService _loyaltyApi = new(ApiClient.Instance);
 
         private Panel _tabContent = null!;
         private Panel _profileTab = null!;
@@ -26,17 +25,6 @@ namespace CRM.UI.Controls
         private Button _tabProfileBtn = null!;
         private Button _tabOrdersBtn = null!;
         private Button _tabInteractionsBtn = null!;
-        private Button _tabLoyaltyBtn = null!;
-        private Panel _loyaltyTab = null!;
-
-        // Loyalty tab runtime state
-        private Label _lblLoyaltyPoints = null!;
-        private Label _lblLoyaltyTier = null!;
-        private Label _lblLoyaltyEarned = null!;
-        private Label _lblLoyaltyRedeemed = null!;
-        private Label _lblLoyaltySpend = null!;
-        private DataGridView _dgvLoyaltyTx = null!;
-        private Label _lblLoyaltyEmpty = null!;
 
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         [Browsable(false)]
@@ -250,12 +238,10 @@ namespace CRM.UI.Controls
             _tabProfileBtn = CreateTab("Profile", "profile", 24);
             _tabOrdersBtn = CreateTab("Orders", "orders", 124);
             _tabInteractionsBtn = CreateTab("Interactions", "interactions", 224);
-            _tabLoyaltyBtn = CreateTab("Loyalty", "loyalty", 324);
 
             tabs.Controls.Add(_tabProfileBtn);
             tabs.Controls.Add(_tabOrdersBtn);
             tabs.Controls.Add(_tabInteractionsBtn);
-            tabs.Controls.Add(_tabLoyaltyBtn);
             tabs.Paint += (s, e) =>
             {
                 using var pen = new Pen(Colors.Border);
@@ -274,17 +260,14 @@ namespace CRM.UI.Controls
             _profileTab = BuildProfileTab();
             _ordersTab = BuildOrdersTab();
             _interactionsTab = BuildInteractionsTab();
-            _loyaltyTab = BuildLoyaltyTab();
 
             _profileTab.Dock = DockStyle.Fill;
             _ordersTab.Dock = DockStyle.Fill;
             _interactionsTab.Dock = DockStyle.Fill;
-            _loyaltyTab.Dock = DockStyle.Fill;
 
             _tabContent.Controls.Add(_profileTab);
             _tabContent.Controls.Add(_ordersTab);
             _tabContent.Controls.Add(_interactionsTab);
-            _tabContent.Controls.Add(_loyaltyTab);
 
             Controls.Add(_tabContent);
             Controls.Add(identity);
@@ -318,201 +301,18 @@ namespace CRM.UI.Controls
             _profileTab.Visible = key == "profile";
             _ordersTab.Visible = key == "orders";
             _interactionsTab.Visible = key == "interactions";
-            _loyaltyTab.Visible = key == "loyalty";
 
             _tabProfileBtn.ForeColor = key == "profile" ? Colors.Primary : Colors.TextSecondary;
             _tabOrdersBtn.ForeColor = key == "orders" ? Colors.Primary : Colors.TextSecondary;
             _tabInteractionsBtn.ForeColor = key == "interactions" ? Colors.Primary : Colors.TextSecondary;
-            _tabLoyaltyBtn.ForeColor = key == "loyalty" ? Colors.Primary : Colors.TextSecondary;
 
             _tabProfileBtn.Font = key == "profile" ? Typography.BodyBold : Typography.Body;
             _tabOrdersBtn.Font = key == "orders" ? Typography.BodyBold : Typography.Body;
             _tabInteractionsBtn.Font = key == "interactions" ? Typography.BodyBold : Typography.Body;
-            _tabLoyaltyBtn.Font = key == "loyalty" ? Typography.BodyBold : Typography.Body;
 
             if (key == "orders") _ = LoadOrdersAsync();
             else if (key == "interactions") _ = LoadInteractionsAsync();
-            else if (key == "loyalty") _ = LoadLoyaltyAsync();
         }
-        // ============================================================
-        // LOYALTY TAB
-        // ============================================================
-        private Panel BuildLoyaltyTab()
-        {
-            var host = new Panel
-            {
-                BackColor = Colors.Background,
-                AutoScroll = true
-            };
-
-            // ---- Summary cards row ----
-            var cardsRow = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 90,
-                BackColor = Colors.Background
-            };
-
-            cardsRow.Controls.Add(MakeLoyaltyCard("CURRENT POINTS", out _lblLoyaltyPoints, 0));
-            cardsRow.Controls.Add(MakeLoyaltyCard("TIER", out _lblLoyaltyTier, 1));
-            cardsRow.Controls.Add(MakeLoyaltyCard("TOTAL EARNED", out _lblLoyaltyEarned, 2));
-            cardsRow.Controls.Add(MakeLoyaltyCard("TOTAL REDEEMED", out _lblLoyaltyRedeemed, 3));
-            cardsRow.Controls.Add(MakeLoyaltyCard("LIFETIME SPEND", out _lblLoyaltySpend, 4));
-
-            // ---- History label ----
-            var lblHist = new Label
-            {
-                Dock = DockStyle.Top,
-                Height = 32,
-                Text = "POINTS HISTORY",
-                Font = Typography.SmallBold,
-                ForeColor = Colors.TextSecondary,
-                Padding = new Padding(0, 10, 0, 0)
-            };
-
-            // ---- History grid ----
-            _dgvLoyaltyTx = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                AutoGenerateColumns = false,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                ReadOnly = true,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                RowHeadersVisible = false,
-                BackgroundColor = Colors.Surface,
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersHeight = 34,
-                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
-                {
-                    BackColor = Colors.Background,
-                    ForeColor = Colors.TextSecondary,
-                    Font = Typography.Small,
-                    Alignment = DataGridViewContentAlignment.MiddleLeft
-                },
-                DefaultCellStyle = new DataGridViewCellStyle
-                {
-                    ForeColor = Colors.TextBody,
-                    SelectionBackColor = Colors.PrimaryLight,
-                    SelectionForeColor = Colors.TextPrimary,
-                    Padding = new Padding(8, 0, 8, 0)
-                },
-                RowTemplate = { Height = 30 }
-            };
-
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Date", DataPropertyName = "DateText", Width = 150 });
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Type", DataPropertyName = "TransactionType", Width = 90 });
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Change", DataPropertyName = "PointsChangeText", Width = 90 });
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Balance", DataPropertyName = "PointsBalance", Width = 90 });
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Order", DataPropertyName = "OrderNumber", Width = 160 });
-            _dgvLoyaltyTx.Columns.Add(new DataGridViewTextBoxColumn
-                { HeaderText = "Description", DataPropertyName = "Description", Width = 300 });
-
-            // ---- Empty state label (overlaid when no rows) ----
-            _lblLoyaltyEmpty = new Label
-            {
-                Text = "No loyalty activity yet.",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Font = Typography.Body,
-                ForeColor = Colors.TextMuted,
-                Visible = false
-            };
-
-            // ---- Compose ----
-            host.Controls.Add(_dgvLoyaltyTx);
-            host.Controls.Add(_lblLoyaltyEmpty);
-            host.Controls.Add(lblHist);
-            host.Controls.Add(cardsRow);
-            _lblLoyaltyEmpty.BringToFront();
-
-            return host;
-        }
-
-        private Panel MakeLoyaltyCard(string caption, out Label valueLabel, int index)
-        {
-            var card = new Panel
-            {
-                Left = index * 176,
-                Top = 0,
-                Width = 168,
-                Height = 84,
-                BackColor = Colors.Surface,
-                Padding = new Padding(14, 10, 14, 10)
-            };
-            card.Paint += (s, e) =>
-            {
-                using var pen = new Pen(Colors.Border);
-                e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
-            };
-
-            card.Controls.Add(new Label
-            {
-                Text = caption,
-                Left = 14, Top = 10,
-                AutoSize = true,
-                Font = Typography.SmallBold,
-                ForeColor = Colors.TextSecondary
-            });
-
-            valueLabel = new Label
-            {
-                Text = "—",
-                Left = 14, Top = 34,
-                Width = card.Width - 28, Height = 36,
-                Font = new Font(Typography.Family, 16f, FontStyle.Bold),
-                ForeColor = Colors.TextPrimary
-            };
-            card.Controls.Add(valueLabel);
-
-            return card;
-        }
-
-        private async System.Threading.Tasks.Task LoadLoyaltyAsync()
-        {
-            try
-            {
-                var summary = await _loyaltyApi.GetCustomerSummaryAsync(_customerId);
-                if (summary == null)
-                {
-                    _lblLoyaltyPoints.Text = "0";
-                    _lblLoyaltyTier.Text = "—";
-                    _lblLoyaltyEarned.Text = "0";
-                    _lblLoyaltyRedeemed.Text = "0";
-                    _lblLoyaltySpend.Text = "PHP 0.00";
-                }
-                else
-                {
-                    _lblLoyaltyPoints.Text = summary.CurrentPoints.ToString("N0");
-                    _lblLoyaltyTier.Text = summary.TierDisplay;
-                    _lblLoyaltyEarned.Text = summary.TotalPointsEarned.ToString("N0");
-                    _lblLoyaltyRedeemed.Text = summary.TotalPointsRedeemed.ToString("N0");
-                    _lblLoyaltySpend.Text = summary.LifetimeSpendText;
-                }
-
-                var tx = await _loyaltyApi.GetCustomerTransactionsAsync(_customerId);
-                _dgvLoyaltyTx.DataSource = null;
-                _dgvLoyaltyTx.DataSource = tx;
-
-                bool empty = tx.Count == 0;
-                _dgvLoyaltyTx.Visible = !empty;
-                _lblLoyaltyEmpty.Visible = empty;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[CustomerDetailPanel.LoadLoyalty] {ex}");
-                _lblLoyaltyEmpty.Text = "Could not load loyalty data.";
-                _lblLoyaltyEmpty.Visible = true;
-                _dgvLoyaltyTx.Visible = false;
-            }
-        }
-
         private Panel BuildProfileTab()
         {
             var host = new Panel { BackColor = Colors.Background, AutoScroll = true };
@@ -1021,5 +821,3 @@ namespace CRM.UI.Controls
         }
     }
 }
-
-

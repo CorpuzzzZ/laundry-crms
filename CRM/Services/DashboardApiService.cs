@@ -1,0 +1,50 @@
+﻿using System;
+using System.Threading.Tasks;
+using CRM.WinForms.Config;
+using CRM.WinForms.Models;
+
+namespace CRM.WinForms.Services
+{
+    public class DashboardApiService
+    {
+        private readonly ApiClient _api;
+
+        public DashboardApiService(ApiClient api)
+        {
+            _api = api;
+        }
+
+        public async Task<CrewDashboardModel?> GetCrewDashboardAsync(DateTime fromUtc, DateTime toUtc)
+        {
+            try
+            {
+                var fromStr = Uri.EscapeDataString(fromUtc.ToString("o"));
+                var toStr = Uri.EscapeDataString(toUtc.ToString("o"));
+                var url = AppConfig.ApiV1Url($"dashboard/crew?from={fromStr}&to={toStr}");
+                var resp = await _api.GetDataAsync<CrewDashboardEnvelope>(url);
+                return resp?.Data;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<AdminDashboardModel?> GetAdminDashboardAsync(DateTime fromUtc, DateTime toUtc)
+        {
+            try
+            {
+                var fromStr = Uri.EscapeDataString(fromUtc.ToString("o"));
+                var toStr = Uri.EscapeDataString(toUtc.ToString("o"));
+                var url = AppConfig.ApiV1Url($"dashboard/admin?from={fromStr}&to={toStr}");
+                var resp = await _api.GetDataAsync<AdminDashboardEnvelope>(url);
+                return resp?.Data;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+}
+

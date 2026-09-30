@@ -205,7 +205,7 @@ namespace CRM.WinForms.Forms
         private void ApplyPermissionGates()
         {
             var user = SessionManager.CurrentUser;
-            bool canCreate = user?.IsAdmin == true || user?.IsSuperAdmin == true;
+            bool canCreate = user?.CanAccessUsers == true;
             fabNew.Visible = canCreate;
             if (canCreate && fabNew.Parent != null)
                 fabNew.BringToFront();

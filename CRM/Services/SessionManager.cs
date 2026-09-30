@@ -22,11 +22,23 @@ namespace CRM.WinForms.Services
         public bool IsManager => Array.Exists(Roles, r => r.Equals("Manager", StringComparison.OrdinalIgnoreCase));
         public bool IsCrew => Array.Exists(Roles, r => r.Equals("Crew", StringComparison.OrdinalIgnoreCase));
 
-        // Super Admin has NO access to Orders
-        public bool CanAccessOrders => IsAdmin || IsManager || IsCrew;
+        // Module Access Permissions
+        // Super Admin has NO access to:
+        // 1. Branch Management
+        // 2. Service Management
+        // 3. User Management
+        // 4. Customer Management
+        // 5. Loyalty Management
+        // 6. Order Management
+        public bool CanAccessBranches => !IsSuperAdmin && IsAdmin;
+        public bool CanAccessServices => !IsSuperAdmin && (IsAdmin || IsManager);
+        public bool CanAccessUsers => !IsSuperAdmin && IsAdmin;
+        public bool CanAccessCustomers => !IsSuperAdmin;
+        public bool CanAccessLoyalty => !IsSuperAdmin;
+        public bool CanAccessOrders => !IsSuperAdmin && (IsAdmin || IsManager || IsCrew);
 
         // Orders: Admin is READ-ONLY. Manager + Crew can create/edit/delete/change-status.
-        public bool CanModifyOrders => IsManager || IsCrew;
+        public bool CanModifyOrders => !IsSuperAdmin && (IsManager || IsCrew);
     }
 
     public static class SessionManager

@@ -1,0 +1,506 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+using CRM.WinForms.UI;
+
+namespace CRM.WinForms.Forms
+{
+    public class OrdersForm : Form
+    {
+        /// <summary>Raised when user clicks New Order.</summary>
+        public event EventHandler? NewOrderRequested;
+
+        /// <summary>Raised when user opens an order for editing.</summary>
+        public event EventHandler<int>? EditOrderRequested;
+
+        private readonly OrderApiService _orderService = new();
+
+        // Filter bar
+        private TextBox txtSearch = null!;
+        private ComboBox cmbStatus = null!;
+        private DateTimePicker dtpFrom = null!;
+        private DateTimePicker dtpTo = null!;
+        private Button btnSearch = null!;
+
+        // Toolbar
+        private Button btnNew = null!;
+        private Button btnEdit = null!;
+        private Button btnDelete = null!;
+        private Button btnRefresh = null!;
+        private Label lblCount = null!;
+
+        // Order list
+        private FlowLayoutPanel pnlOrderList = null!;
+
+        // State
+        private readonly List<OrderModel> _orders = new();
+        private OrderModel? _selectedOrder;
+        private Panel? _selectedCard;
+
+        public OrdersForm()
+        {
+            InitializeComponent();
+            Load += async (s, e) => await LoadDataAsync();
+        }
+
+        private void InitializeComponent()
+        {
+            Text = "Order Management";
+            Size = new Size(1300, 750);
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Theme.BackgroundColor;
+            Font = Theme.BodyFont;
+
+            // ============ TOP: FILTERS ============
+            var pnlFilter = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 80,
+                BackColor = Color.White,
+                Padding = new Padding(20, 15, 20, 15)
+            };
+
+            var lblSearch = new Label
+            {
+                Text = "Search",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(20, 5),
+                AutoSize = true
+            };
+            txtSearch = new TextBox
+            {
+                Location = new Point(20, 25),
+                Width = 250,
+                Font = Theme.BodyFont,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            txtSearch.KeyPress += async (s, e) => { if (e.KeyChar == (char)Keys.Enter) await SearchAsync(); };
+
+            var lblStatus = new Label
+            {
+                Text = "Status",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(290, 5),
+                AutoSize = true
+            };
+            cmbStatus = new ComboBox
+            {
+                Location = new Point(290, 25),
+                Width = 140,
+                Font = Theme.BodyFont,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            cmbStatus.Items.Add("All Statuses");
+            cmbStatus.SelectedIndex = 0;
+            cmbStatus.SelectedIndexChanged += async (s, e) => await SearchAsync();
+
+            var lblFrom = new Label
+            {
+                Text = "From",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(450, 5),
+                AutoSize = true
+            };
+            dtpFrom = new DateTimePicker
+            {
+                Location = new Point(450, 25),
+                Width = 130,
+                Font = Theme.BodyFont,
+                Format = DateTimePickerFormat.Short,
+                Value = DateTime.Today.AddDays(-30)
+            };
+
+            var lblTo = new Label
+            {
+                Text = "To",
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(600, 5),
+                AutoSize = true
+            };
+            dtpTo = new DateTimePicker
+            {
+                Location = new Point(600, 25),
+                Width = 130,
+                Font = Theme.BodyFont,
+                Format = DateTimePickerFormat.Short,
+                Value = DateTime.Today
+            };
+
+            btnSearch = new Button
+            {
+                Text = "Search",
+                Location = new Point(750, 23),
+                Width = 100,
+                Height = 32
+            };
+            Theme.StylePrimaryButton(btnSearch);
+            btnSearch.Click += async (s, e) => await SearchAsync();
+
+            pnlFilter.Controls.AddRange(new Control[]
+            {
+                lblSearch, txtSearch, lblStatus, cmbStatus,
+                lblFrom, dtpFrom, lblTo, dtpTo, btnSearch
+            });
+
+            // ============ TOOLBAR ============
+            var pnlToolbar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 60,
+                BackColor = Color.White,
+                Padding = new Padding(20, 10, 20, 10)
+            };
+
+            btnNew = new Button
+            {
+                Text = "+ New Order",
+                Location = new Point(20, 12),
+                Width = 130,
+                Height = 36
+            };
+            Theme.StyleSuccessButton(btnNew);
+            btnNew.Click += (s, e) => CreateOrder();
+
+            btnEdit = new Button
+            {
+                Text = "View / Edit",
+                Location = new Point(160, 12),
+                Width = 130,
+                Height = 36
+            };
+            Theme.StylePrimaryButton(btnEdit);
+            btnEdit.Click += (s, e) => EditSelected();
+
+            btnDelete = new Button
+            {
+                Text = "Delete",
+                Location = new Point(300, 12),
+                Width = 110,
+                Height = 36
+            };
+            Theme.StyleDangerButton(btnDelete);
+            btnDelete.Click += async (s, e) => await DeleteSelectedAsync();
+
+            btnRefresh = new Button
+            {
+                Text = "Refresh",
+                Location = new Point(420, 12),
+                Width = 110,
+                Height = 36
+            };
+            Theme.StyleSecondaryButton(btnRefresh);
+            btnRefresh.Click += async (s, e) => await LoadDataAsync();
+
+            // Order count label
+            lblCount = new Label
+            {
+                Text = "0 orders",
+                Font = Theme.BodyFont,
+                ForeColor = Theme.TextLightColor,
+                AutoSize = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            pnlToolbar.Controls.Add(lblCount);
+            pnlToolbar.Resize += (s, e) =>
+            {
+                lblCount.Location = new Point(pnlToolbar.Width - lblCount.Width - 20, 22);
+            };
+
+            // Role-based visibility
+            var user = SessionManager.CurrentUser;
+            bool canModify = user?.CanModifyOrders == true;
+            btnNew.Visible = canModify;
+            btnEdit.Visible = canModify;
+            btnDelete.Visible = canModify;
+
+            pnlToolbar.Controls.AddRange(new Control[]
+            {
+                btnNew, btnEdit, btnDelete, btnRefresh
+            });
+
+            // ============ ORDER LIST (cards) ============
+            pnlOrderList = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                BackColor = Theme.BackgroundColor,
+                Padding = new Padding(20)
+            };
+            pnlOrderList.Resize += (s, e) => ResizeCards();
+
+            Controls.Add(pnlOrderList);
+            Controls.Add(pnlToolbar);
+            Controls.Add(pnlFilter);
+
+            UpdateButtonsState();
+        }
+
+        private async Task LoadDataAsync()
+        {
+            await LoadStatusesAsync();
+
+            var response = await _orderService.GetOrdersAsync(
+                page: 1,
+                pageSize: 500,
+                search: string.IsNullOrWhiteSpace(txtSearch.Text) ? null : txtSearch.Text,
+                statusCode: cmbStatus.SelectedIndex > 0 ? cmbStatus.SelectedItem?.ToString() : null,
+                dateFrom: dtpFrom.Value.Date,
+                dateTo: dtpTo.Value.Date);
+
+            _orders.Clear();
+            _orders.AddRange(response.Data);
+
+            _selectedOrder = null;
+            _selectedCard = null;
+
+            BuildOrderCards();
+
+            lblCount.Text = $"{_orders.Count} order{(_orders.Count != 1 ? "s" : "")}";
+            UpdateButtonsState();
+        }
+
+        private void BuildOrderCards()
+        {
+            pnlOrderList.SuspendLayout();
+            pnlOrderList.Controls.Clear();
+
+            foreach (var order in _orders)
+            {
+                var card = BuildOrderCard(order);
+                pnlOrderList.Controls.Add(card);
+            }
+
+            pnlOrderList.ResumeLayout();
+        }
+
+        private void ResizeCards()
+        {
+            int targetWidth = pnlOrderList.ClientSize.Width - 40;
+            if (targetWidth < 400) targetWidth = 400;
+
+            foreach (Control c in pnlOrderList.Controls)
+            {
+                c.Width = targetWidth;
+            }
+        }
+
+        private Panel BuildOrderCard(OrderModel order)
+        {
+            int cardWidth = pnlOrderList.ClientSize.Width - 40;
+            if (cardWidth < 400) cardWidth = 400;
+
+            var card = new Panel
+            {
+                Width = cardWidth,
+                Height = 110,
+                BackColor = Color.White,
+                Margin = new Padding(0, 0, 0, 12),
+                Padding = new Padding(20, 14, 20, 14),
+                Cursor = Cursors.Hand,
+                Tag = order
+            };
+
+            card.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+                var rect = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
+                var borderColor = (order == _selectedOrder) ? Theme.AccentColor : Theme.BorderColor;
+                var borderWidth = (order == _selectedOrder) ? 2f : 1f;
+
+                using var path = GetRoundedRect(rect, 8);
+                using var pen = new Pen(borderColor, borderWidth);
+                g.DrawPath(pen, path);
+            };
+
+            // Row 1: Order #
+            var lblOrder = new Label
+            {
+                Text = order.OrderNumber,
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                ForeColor = Theme.TextDarkColor,
+                Location = new Point(20, 14),
+                AutoSize = true
+            };
+
+            // Row 1 (right): Status badge
+            var lblStatus = new Label
+            {
+                Text = order.StatusName,
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = GetStatusColor(order.StatusName),
+                Size = new Size(110, 24),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+
+            // Row 2: Customer name + phone
+            var lblCustomer = new Label
+            {
+                Text = $"{order.CustomerName}   {order.CustomerPhone}",
+                Font = Theme.BodyFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(20, 46),
+                AutoSize = true
+            };
+
+            // Row 3 (left): Date
+            var lblDate = new Label
+            {
+                Text = order.OrderDate.ToString("yyyy-MM-dd HH:mm"),
+                Font = Theme.SmallFont,
+                ForeColor = Theme.TextLightColor,
+                Location = new Point(20, 76),
+                AutoSize = true
+            };
+
+            // Row 3 (right): Total
+            var lblTotal = new Label
+            {
+                Text = $"PHP {order.TotalAmount:N2}",
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                ForeColor = Theme.AccentColor,
+                Size = new Size(160, 24),
+                TextAlign = ContentAlignment.MiddleRight,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+
+            card.Controls.Add(lblOrder);
+            card.Controls.Add(lblStatus);
+            card.Controls.Add(lblCustomer);
+            card.Controls.Add(lblDate);
+            card.Controls.Add(lblTotal);
+
+            // Position right-aligned controls
+            card.Resize += (s, e) =>
+            {
+                lblStatus.Location = new Point(card.Width - lblStatus.Width - 20, 14);
+                lblTotal.Location = new Point(card.Width - lblTotal.Width - 20, 76);
+            };
+
+            // Click handlers
+            EventHandler clickHandler = (s, e) => SelectOrder(order, card);
+            card.Click += clickHandler;
+            foreach (Control child in card.Controls)
+                child.Click += clickHandler;
+
+            return card;
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath GetRoundedRect(Rectangle rect, int radius)
+        {
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+            int d = radius * 2;
+            if (d <= 0 || d > rect.Width || d > rect.Height)
+            {
+                path.AddRectangle(rect);
+                return path;
+            }
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.X + rect.Width - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.X + rect.Width - d, rect.Y + rect.Height - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Y + rect.Height - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        private void SelectOrder(OrderModel order, Panel card)
+        {
+            _selectedOrder = order;
+            _selectedCard = card;
+
+            // Redraw all cards to update borders
+            foreach (Control c in pnlOrderList.Controls)
+                c.Invalidate();
+
+            UpdateButtonsState();
+        }
+
+        private static Color GetStatusColor(string? statusName)
+        {
+            return statusName?.ToLowerInvariant() switch
+            {
+                "pending" => Theme.WarningColor,
+                "in progress" => Theme.AccentColor,
+                "ready" => Theme.SuccessColor,
+                "completed" => Theme.SuccessColor,
+                "cancelled" => Theme.DangerColor,
+                _ => Theme.TextLightColor
+            };
+        }
+
+        private void UpdateButtonsState()
+        {
+            bool hasSelection = _selectedOrder != null;
+            btnEdit.Enabled = hasSelection;
+            btnDelete.Enabled = hasSelection;
+        }
+
+        private async Task LoadStatusesAsync()
+        {
+            if (cmbStatus.Items.Count > 1) return;
+
+            var statuses = await _orderService.GetStatusesAsync();
+            foreach (var s in statuses)
+                cmbStatus.Items.Add(s.StatusName);
+        }
+
+        private async Task SearchAsync()
+        {
+            await LoadDataAsync();
+        }
+
+        private void CreateOrder()
+        {
+            NewOrderRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void EditSelected()
+        {
+            if (_selectedOrder == null) return;
+            EditOrderRequested?.Invoke(this, _selectedOrder.OrderId);
+        }
+
+        private async Task DeleteSelectedAsync()
+        {
+            if (_selectedOrder == null) return;
+
+            var orderId = _selectedOrder.OrderId;
+            var orderNumber = _selectedOrder.OrderNumber;
+
+            var confirm = MessageBox.Show(
+                $"Delete order {orderNumber}?\n\nThis action cannot be undone.",
+                "Confirm Delete",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (confirm != DialogResult.Yes) return;
+
+            var (success, error) = await _orderService.DeleteOrderAsync(orderId);
+            if (success)
+            {
+                MessageBox.Show("Order deleted successfully.", "Success",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await LoadDataAsync();
+            }
+            else
+            {
+                MessageBox.Show($"Failed to delete: {error}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+}

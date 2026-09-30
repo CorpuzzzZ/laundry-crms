@@ -1,0 +1,312 @@
+﻿using System;
+using System.Drawing;
+using System.Windows.Forms;
+using CRM.UI;
+using CRM.WinForms.Models;
+using CRM.WinForms.Services;
+
+namespace CRM.WinForms.Forms
+{
+    public class LoyaltyTierDialog : Form
+    {
+        private readonly LoyaltyApiService _api;
+        private readonly int _tierId;   // 0 = create
+
+        private TextBox _txtName = null!;
+        private NumericUpDown _numMin = null!;
+        private NumericUpDown _numMax = null!;
+        private CheckBox _chkNoMax = null!;
+        private NumericUpDown _numDiscount = null!;
+        private NumericUpDown _numMultiplier = null!;
+        private NumericUpDown _numSort = null!;
+        private CheckBox _chkActive = null!;
+        private Button _btnSave = null!;
+        private Button _btnCancel = null!;
+
+        public LoyaltyTierDialog(LoyaltyApiService api, int tierId)
+        {
+            _api = api;
+            _tierId = tierId;
+            Build();
+            Load += async (s, e) => await LoadAsync();
+        }
+
+        private void Build()
+        {
+            Text = _tierId > 0 ? "Edit Loyalty Tier" : "New Loyalty Tier";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(520, 460);
+            MinimumSize = new Size(520, 400);
+            BackColor = Colors.Background;
+            Font = Typography.Body;
+
+            // ----- Footer first so it stays pinned at the bottom -----
+            var footer = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 64,
+                BackColor = Colors.Surface,
+                Padding = new Padding(20, 12, 20, 12)
+            };
+
+            _btnCancel = new Button
+            {
+                Text = "Cancel",
+                Width = 110, Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Surface,
+                ForeColor = Colors.TextPrimary,
+                Font = Typography.Body,
+                Anchor = AnchorStyles.Right | AnchorStyles.Top
+            };
+            _btnCancel.FlatAppearance.BorderSize = 1;
+            _btnCancel.FlatAppearance.BorderColor = Colors.Border;
+            _btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+
+            _btnSave = new Button
+            {
+                Text = "Save",
+                Width = 110, Height = 36,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.Primary,
+                ForeColor = Color.White,
+                Font = Typography.Body,
+                Anchor = AnchorStyles.Right | AnchorStyles.Top
+            };
+            _btnSave.FlatAppearance.BorderSize = 0;
+            _btnSave.Click += async (s, e) => await SaveAsync();
+
+            footer.Controls.Add(_btnCancel);
+            footer.Controls.Add(_btnSave);
+            
+            // ---- Role gating ----
+ user = CRM.WinForms.Services.SessionManager.CurrentUser;
+ canManage = user?.IsAdmin == true || user?.IsManager == true;
+ (!canManage)
+            {
+                _btnSave.Enabled = false;
+                _btnSave.Text = "Save (Admin/Manager only)";
+                _btnSave.BackColor = Colors.TextMuted;
+                _btnSave.ForeColor = Colors.TextPrimary;
+            }
+            footer.Resize += (s, e) =>
+            {
+                _btnCancel.Left = footer.ClientSize.Width - 140;
+                _btnCancel.Top  = 14;
+                _btnSave.Left   = footer.ClientSize.Width - 260;
+                _btnSave.Top    = 14;
+            };
+
+            // ----- Scrollable host -----
+            var scroller = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Colors.Background
+            };
+
+            // ----- Content card (non-docked, absolute position) -----
+            var card = new Panel
+            {
+                Location = new Point(20, 20),
+                Width = 460,
+                Height = 100,          // will be recomputed after fields are added
+                BackColor = Colors.Surface,
+                Padding = new Padding(28, 24, 28, 24)
+            };
+            int y = 24;
+
+            card.Controls.Add(FieldLabel("Tier Name *", y));
+            _txtName = new TextBox
+            {
+                Left = 28, Top = y + 22, Width = 400,
+                Font = Typography.Body,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            card.Controls.Add(_txtName);
+            y += 76;
+
+            card.Controls.Add(FieldLabel("Minimum Points *", y));
+            _numMin = MakeNum(y + 22, 160, 0m, int.MaxValue, 0);
+            card.Controls.Add(_numMin);
+            y += 76;
+
+            card.Controls.Add(FieldLabel("Maximum Points", y));
+            _numMax = MakeNum(y + 22, 160, 0m, int.MaxValue, 0);
+            card.Controls.Add(_numMax);
+
+            _chkNoMax = new CheckBox
+            {
+                Text = "No upper bound",
+                Left = 200, Top = y + 24,
+                Width = 180, Height = 26,
+                Font = Typography.Small,
+                ForeColor = Colors.TextBody
+            };
+            _chkNoMax.CheckedChanged += (s, e) => _numMax.Enabled = !_chkNoMax.Checked;
+            card.Controls.Add(_chkNoMax);
+            y += 76;
+
+            card.Controls.Add(FieldLabel("Discount Percentage (0-100)", y));
+            _numDiscount = MakeNum(y + 22, 160, 0m, 100m, 2);
+            card.Controls.Add(_numDiscount);
+            y += 76;
+
+            card.Controls.Add(FieldLabel("Points Multiplier", y));
+            _numMultiplier = MakeNum(y + 22, 160, 0.1m, 100m, 2);
+            _numMultiplier.Value = 1m;
+            card.Controls.Add(_numMultiplier);
+            y += 76;
+
+            card.Controls.Add(FieldLabel("Sort Order", y));
+            _numSort = MakeNum(y + 22, 160, 0m, 10000m, 0);
+            card.Controls.Add(_numSort);
+            y += 76;
+
+            _chkActive = new CheckBox
+            {
+                Text = "Active",
+                Left = 28, Top = y,
+                Width = 200, Height = 26,
+                Font = Typography.Body,
+                ForeColor = Colors.TextBody,
+                Checked = true
+            };
+            card.Controls.Add(_chkActive);
+            y += 40;
+
+            // Final card height = exactly what content needs
+            card.Height = y + 24;
+
+            scroller.Controls.Add(card);
+
+            // Keep card width in sync with scroller viewport
+            scroller.Resize += (s, e) =>
+            {
+                int avail = scroller.ClientSize.Width - 40;  // 20px each side
+                if (avail < 380) avail = 380;
+                card.Width = avail;
+            };
+
+            // ----- Compose -----
+            Controls.Add(scroller);
+            Controls.Add(footer);
+
+            AcceptButton = _btnSave;
+            CancelButton = _btnCancel;
+        }
+
+        private static Label FieldLabel(string text, int top) => new()
+        {
+            Text = text,
+            Left = 28, Top = top, AutoSize = true,
+            Font = Typography.Small,
+            ForeColor = Colors.TextBody
+        };
+
+        private static NumericUpDown MakeNum(int top, int width, decimal min, decimal max, int decimals) => new()
+        {
+            Left = 28, Top = top, Width = width,
+            Minimum = min, Maximum = max, DecimalPlaces = decimals,
+            Font = Typography.Body,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        private async System.Threading.Tasks.Task LoadAsync()
+        {
+            if (_tierId <= 0) return;
+            try
+            {
+                var tiers = await _api.GetTiersAsync();
+                var t = tiers.Find(x => x.LoyaltyTierId == _tierId);
+                if (t == null) { DialogResult = DialogResult.Cancel; Close(); return; }
+
+                _txtName.Text = t.TierName;
+                _numMin.Value = Clamp(t.MinPoints, _numMin);
+                if (t.MaxPoints.HasValue)
+                {
+                    _numMax.Value = Clamp(t.MaxPoints.Value, _numMax);
+                    _chkNoMax.Checked = false;
+                }
+                else
+                {
+                    _chkNoMax.Checked = true;
+                    _numMax.Enabled = false;
+                }
+                _numDiscount.Value = Clamp(t.DiscountPercentage, _numDiscount);
+                _numMultiplier.Value = Clamp(t.PointsMultiplier, _numMultiplier);
+                _numSort.Value = Clamp(t.SortOrder, _numSort);
+                _chkActive.Checked = t.IsActive;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load tier.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static decimal Clamp(decimal v, NumericUpDown n)
+            => v < n.Minimum ? n.Minimum : (v > n.Maximum ? n.Maximum : v);
+
+        private async System.Threading.Tasks.Task SaveAsync()
+        {
+            if (string.IsNullOrWhiteSpace(_txtName.Text))
+            {
+                MessageBox.Show("Tier name is required.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _txtName.Focus();
+                return;
+            }
+
+            _btnSave.Enabled = false;
+            try
+            {
+                var req = new CreateLoyaltyTierRequest
+                {
+                    TierName = _txtName.Text.Trim(),
+                    MinPoints = (int)_numMin.Value,
+                    MaxPoints = _chkNoMax.Checked ? (int?)null : (int)_numMax.Value,
+                    DiscountPercentage = _numDiscount.Value,
+                    PointsMultiplier = _numMultiplier.Value,
+                    SortOrder = (int)_numSort.Value,
+                    IsActive = _chkActive.Checked
+                };
+
+                LoyaltyTierModel? result;
+                if (_tierId > 0)
+                    result = await _api.UpdateTierAsync(_tierId, new UpdateLoyaltyTierRequest
+                    {
+                        TierName = req.TierName,
+                        MinPoints = req.MinPoints,
+                        MaxPoints = req.MaxPoints,
+                        DiscountPercentage = req.DiscountPercentage,
+                        PointsMultiplier = req.PointsMultiplier,
+                        SortOrder = req.SortOrder,
+                        IsActive = req.IsActive
+                    });
+                else
+                    result = await _api.CreateTierAsync(req);
+
+                if (result == null)
+                {
+                    MessageBox.Show(
+                        "Save failed. Check API logs — possible duplicate name.",
+                        "Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+            finally
+            {
+                _btnSave.Enabled = true;
+            }
+        }
+    }
+}
+
+
