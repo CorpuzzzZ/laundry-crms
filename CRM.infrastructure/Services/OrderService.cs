@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -47,6 +47,7 @@ namespace CRM.infrastructure.Services
                 .Include(o => o.OrderItems).ThenInclude(oi => oi.Service)
                 .Include(o => o.OrderItems).ThenInclude(oi => oi.GarmentType)
                 .Include(o => o.Payments).ThenInclude(p => p.PaymentMethod)
+                .Include(o => o.StatusHistory).ThenInclude(sh => sh.Status)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.OrderId == orderId);
 
@@ -63,6 +64,7 @@ namespace CRM.infrastructure.Services
                 .Include(o => o.Customer)
                 .Include(o => o.Status)
                 .Include(o => o.OrderItems).ThenInclude(oi => oi.Service)
+                .Include(o => o.Payments)
                 .AsNoTracking()
                 .AsQueryable();
 
@@ -90,7 +92,10 @@ namespace CRM.infrastructure.Services
                 query = query.Where(o => o.OrderDate >= filter.DateFrom.Value);
 
             if (filter.DateTo.HasValue)
-                query = query.Where(o => o.OrderDate <= filter.DateTo.Value);
+            {
+                var endOfDay = filter.DateTo.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(o => o.OrderDate <= endOfDay);
+            }
 
             // Count before pagination
             var totalCount = await query.CountAsync();
@@ -159,7 +164,12 @@ namespace CRM.infrastructure.Services
                     UnitPrice = itemDto.UnitPrice,
                     DiscountAmount = itemDto.DiscountAmount,
                     SpecialInstructions = itemDto.SpecialInstructions,
-                    IsCompleted = false
+                    IsCompleted = false,
+                    WeightKg = itemDto.WeightKg,
+                    CategoryName = itemDto.CategoryName,
+                    AddOnsJson = itemDto.AddOns != null && itemDto.AddOns.Count > 0
+                        ? System.Text.Json.JsonSerializer.Serialize(itemDto.AddOns)
+                        : null
                 });
             }
 
@@ -253,7 +263,12 @@ namespace CRM.infrastructure.Services
                         Quantity = itemDto.Quantity,
                         UnitPrice = itemDto.UnitPrice,
                         DiscountAmount = itemDto.DiscountAmount,
-                        SpecialInstructions = itemDto.SpecialInstructions
+                        SpecialInstructions = itemDto.SpecialInstructions,
+                        WeightKg = itemDto.WeightKg,
+                        CategoryName = itemDto.CategoryName,
+                        AddOnsJson = itemDto.AddOns != null && itemDto.AddOns.Count > 0
+                            ? System.Text.Json.JsonSerializer.Serialize(itemDto.AddOns)
+                            : null
                     });
                 }
 
@@ -311,6 +326,7 @@ namespace CRM.infrastructure.Services
                 OrderId = orderId,
                 StatusId = dto.StatusId,
                 ChangedByUserId = userId,
+                ChangedByName = dto.ChangedByName,
                 Notes = dto.Notes,
                 ChangedAt = DateTime.UtcNow
             });
@@ -323,7 +339,7 @@ namespace CRM.infrastructure.Services
         // ADD PAYMENT
         // ----------------------------------------------------------
         public async Task<OrderPaymentDto> AddPaymentAsync(
-            TenantErpDbContext db, int orderId, CreateOrderPaymentDto dto)
+            TenantErpDbContext db, int orderId, CreateOrderPaymentDto dto, string userId)
         {
             var order = await db.Orders.FirstOrDefaultAsync(o => o.OrderId == orderId)
                 ?? throw new InvalidOperationException($"Order {orderId} not found.");
@@ -339,6 +355,8 @@ namespace CRM.infrastructure.Services
                 ReferenceNumber = dto.ReferenceNumber,
                 PaymentDate = DateTime.UtcNow,
                 Status = "Completed",
+                ReceivedByUserId = userId,
+                ReceivedByName = dto.ReceivedByName,
                 Notes = dto.Notes
             };
 
@@ -354,7 +372,8 @@ namespace CRM.infrastructure.Services
                 ReferenceNumber = payment.ReferenceNumber,
                 PaymentDate = payment.PaymentDate,
                 Status = payment.Status,
-                Notes = payment.Notes
+                Notes = payment.Notes,
+                ReceivedByName = payment.ReceivedByName
             };
         }
 
@@ -403,7 +422,12 @@ namespace CRM.infrastructure.Services
                     LineTotal = (oi.Quantity * oi.UnitPrice) - oi.DiscountAmount,
                     SpecialInstructions = oi.SpecialInstructions,
                     IsCompleted = oi.IsCompleted,
-                    CompletedAt = oi.CompletedAt
+                    CompletedAt = oi.CompletedAt,
+                    WeightKg = oi.WeightKg,
+                    CategoryName = oi.CategoryName,
+                    AddOns = string.IsNullOrEmpty(oi.AddOnsJson)
+                        ? new List<string>()
+                        : (System.Text.Json.JsonSerializer.Deserialize<List<string>>(oi.AddOnsJson) ?? new List<string>())
                 }).ToList() ?? new List<OrderItemDto>(),
                 Payments = order.Payments?.Select(p => new OrderPaymentDto
                 {
@@ -414,8 +438,23 @@ namespace CRM.infrastructure.Services
                     ReferenceNumber = p.ReferenceNumber,
                     PaymentDate = p.PaymentDate,
                     Status = p.Status,
-                    Notes = p.Notes
-                }).ToList() ?? new List<OrderPaymentDto>()
+                    Notes = p.Notes,
+                    ReceivedByName = p.ReceivedByName
+                }).ToList() ?? new List<OrderPaymentDto>(),
+                StatusHistory = order.StatusHistory?
+                    .OrderBy(sh => sh.ChangedAt)
+                    .Select(sh => new OrderStatusHistoryDto
+                    {
+                        OrderStatusHistoryId = sh.OrderStatusHistoryId,
+                        OrderId = sh.OrderId,
+                        StatusId = sh.StatusId,
+                        StatusCode = sh.Status?.StatusCode ?? string.Empty,
+                        StatusName = sh.Status?.StatusName ?? string.Empty,
+                        ChangedByUserId = sh.ChangedByUserId,
+                        ChangedByName = sh.ChangedByName,
+                        Notes = sh.Notes,
+                        ChangedAt = sh.ChangedAt
+                    }).ToList() ?? new List<OrderStatusHistoryDto>()
             };
         }
 

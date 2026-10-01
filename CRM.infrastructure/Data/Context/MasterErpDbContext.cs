@@ -93,6 +93,8 @@ namespace CRM.infrastructure.Data.Context
                 entity.Property(x => x.PostalCode).HasMaxLength(20).IsRequired();
                 entity.Property(x => x.Country).HasMaxLength(50).IsRequired();
                 entity.Property(x => x.Phone).HasMaxLength(20).IsRequired();
+                entity.Property(x => x.Latitude).HasColumnType("decimal(18,6)");
+                entity.Property(x => x.Longitude).HasColumnType("decimal(18,6)");
                 entity.HasIndex(x => x.BranchCode).IsUnique();
 
                 entity.HasOne(x => x.Company)
@@ -125,6 +127,8 @@ namespace CRM.infrastructure.Data.Context
                 entity.HasKey(x => x.PlanId);
                 entity.Property(x => x.PlanName).HasMaxLength(100).IsRequired();
                 entity.Property(x => x.PlanCode).HasMaxLength(20).IsRequired();
+                entity.Property(x => x.PricePerMonth).HasColumnType("decimal(18,2)");
+                entity.Property(x => x.PricePerYear).HasColumnType("decimal(18,2)");
                 entity.HasIndex(x => x.PlanName).IsUnique();
                 entity.HasIndex(x => x.PlanCode).IsUnique();
             });
@@ -134,6 +138,7 @@ namespace CRM.infrastructure.Data.Context
             {
                 entity.HasKey(x => x.TenantSubscriptionId);
                 entity.Property(x => x.PaymentStatus).HasMaxLength(20).IsRequired();
+                entity.Property(x => x.AmountPaid).HasColumnType("decimal(18,2)");
 
                 entity.HasOne(x => x.Company)
                     .WithMany(x => x.TenantSubscriptions)

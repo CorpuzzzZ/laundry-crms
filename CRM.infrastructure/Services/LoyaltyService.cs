@@ -1,0 +1,491 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using CRM.Domain.DTOs.Loyalty;
+using CRM.Domain.Entities.TenantDb;
+using CRM.infrastructure.Data.Context;
+
+namespace CRM.infrastructure.Services
+{
+    public class LoyaltyService : ILoyaltyService
+    {
+        // ============================================================
+        // SETTINGS
+        // ============================================================
+        public async Task<LoyaltySettingDto?> GetSettingsAsync(TenantErpDbContext db)
+        {
+            var s = await db.LoyaltySettings.AsNoTracking().FirstOrDefaultAsync();
+            return s == null ? null : MapSetting(s);
+        }
+
+        public async Task<LoyaltySettingDto?> UpdateSettingsAsync(
+            TenantErpDbContext db, UpdateLoyaltySettingDto dto, string? userId)
+        {
+            var s = await db.LoyaltySettings.FirstOrDefaultAsync();
+
+            // First-time creation — seed a single row
+            if (s == null)
+            {
+                s = new LoyaltySetting();
+                db.LoyaltySettings.Add(s);
+            }
+
+            s.PointsPerOrder = dto.PointsPerOrder;
+            s.PointsPerDollar = dto.PointsPerDollar;
+            s.RedeemPointsRequired = dto.RedeemPointsRequired;
+            s.RedeemDiscountAmount = dto.RedeemDiscountAmount;
+            s.PointsExpiryDays = dto.PointsExpiryDays;
+            s.IsActive = dto.IsActive;
+            s.UpdatedAt = DateTime.UtcNow;
+            s.UpdatedBy = int.TryParse(userId, out var uid) ? uid : (int?)null;
+
+            await db.SaveChangesAsync();
+            return MapSetting(s);
+        }
+
+        // ============================================================
+        // TIERS
+        // ============================================================
+        public async Task<List<LoyaltyTierDto>> GetTiersAsync(TenantErpDbContext db)
+        {
+            return await db.LoyaltyTiers.AsNoTracking()
+                .OrderBy(t => t.SortOrder).ThenBy(t => t.MinPoints)
+                .Select(t => MapTier(t))
+                .ToListAsync();
+        }
+
+        public async Task<LoyaltyTierDto?> GetTierByIdAsync(TenantErpDbContext db, int tierId)
+        {
+            var t = await db.LoyaltyTiers.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            return t == null ? null : MapTier(t);
+        }
+
+        public async Task<LoyaltyTierDto> CreateTierAsync(
+            TenantErpDbContext db, CreateLoyaltyTierDto dto)
+        {
+            var t = new LoyaltyTier
+            {
+                TierName = dto.TierName.Trim(),
+                MinPoints = dto.MinPoints,
+                MaxPoints = dto.MaxPoints,
+                DiscountPercentage = dto.DiscountPercentage,
+                PointsMultiplier = dto.PointsMultiplier,
+                BenefitsJSON = dto.BenefitsJSON,
+                IsActive = dto.IsActive,
+                SortOrder = dto.SortOrder,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.LoyaltyTiers.Add(t);
+            await db.SaveChangesAsync();
+            return MapTier(t);
+        }
+
+        public async Task<LoyaltyTierDto?> UpdateTierAsync(
+            TenantErpDbContext db, int tierId, UpdateLoyaltyTierDto dto)
+        {
+            var t = await db.LoyaltyTiers.FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            if (t == null) return null;
+
+            t.TierName = dto.TierName.Trim();
+            t.MinPoints = dto.MinPoints;
+            t.MaxPoints = dto.MaxPoints;
+            t.DiscountPercentage = dto.DiscountPercentage;
+            t.PointsMultiplier = dto.PointsMultiplier;
+            t.BenefitsJSON = dto.BenefitsJSON;
+            t.IsActive = dto.IsActive;
+            t.SortOrder = dto.SortOrder;
+
+            await db.SaveChangesAsync();
+            return MapTier(t);
+        }
+
+        public async Task<bool> DeleteTierAsync(TenantErpDbContext db, int tierId)
+        {
+            var t = await db.LoyaltyTiers.FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            if (t == null) return false;
+
+            // Prevent deleting a tier that customers are already assigned to.
+            bool inUse = await db.CustomerLoyalties.AnyAsync(c => c.LoyaltyTierId == tierId);
+            if (inUse) return false;
+
+            db.LoyaltyTiers.Remove(t);
+            await db.SaveChangesAsync();
+            return true;
+        }
+
+        // ============================================================
+        // MAPPERS
+        // ============================================================
+        // ============================================================
+        // CUSTOMERS WITH LOYALTY
+        // ============================================================
+        public async Task<List<LoyaltyCustomerDto>> GetCustomersAsync(TenantErpDbContext db)
+        {
+            // Customers that have a CustomerLoyalty row
+            var withLoyalty = await db.CustomerLoyalties
+                .AsNoTracking()
+                .Include(cl => cl.Customer)
+                .Include(cl => cl.LoyaltyTier)
+                .Where(cl => cl.Customer != null)
+                .OrderByDescending(cl => cl.CurrentPoints)
+                .Select(cl => new LoyaltyCustomerDto
+                {
+                    CustomerId = cl.CustomerId,
+                    CustomerCode = cl.Customer!.CustomerCode,
+                    CustomerName = (cl.Customer.FirstName + " " + cl.Customer.LastName).Trim(),
+                    Phone = cl.Customer.PhonePrimary,
+                    Email = cl.Customer.Email,
+                    LoyaltyTierId = cl.LoyaltyTierId,
+                    TierName = cl.LoyaltyTier != null ? cl.LoyaltyTier.TierName : null,
+                    CurrentPoints = cl.CurrentPoints,
+                    TotalPointsEarned = cl.TotalPointsEarned,
+                    TotalPointsRedeemed = cl.TotalPointsRedeemed,
+                    LifetimeSpend = cl.LifetimeSpend,
+                    LastActivityDate = cl.LastActivityDate,
+                    IsActive = cl.IsActive
+                })
+                .ToListAsync();
+
+            // Also include customers with no CustomerLoyalty row yet (0 points)
+            var withLoyaltyIds = withLoyalty.Select(x => x.CustomerId).ToHashSet();
+
+            var withoutLoyalty = await db.Customers
+                .AsNoTracking()
+                .Where(c => c.IsActive && !c.IsArchived && !withLoyaltyIds.Contains(c.CustomerId))
+                .OrderBy(c => c.FirstName).ThenBy(c => c.LastName)
+                .Select(c => new LoyaltyCustomerDto
+                {
+                    CustomerId = c.CustomerId,
+                    CustomerCode = c.CustomerCode,
+                    CustomerName = (c.FirstName + " " + c.LastName).Trim(),
+                    Phone = c.PhonePrimary,
+                    Email = c.Email,
+                    LoyaltyTierId = null,
+                    TierName = null,
+                    CurrentPoints = 0,
+                    TotalPointsEarned = 0,
+                    TotalPointsRedeemed = 0,
+                    LifetimeSpend = 0m,
+                    LastActivityDate = null,
+                    IsActive = true
+                })
+                .ToListAsync();
+
+            return withLoyalty.Concat(withoutLoyalty)
+                .OrderByDescending(x => x.CurrentPoints)
+                .ThenBy(x => x.CustomerName)
+                .ToList();
+        }
+
+        public async Task<List<LoyaltyTransactionDto>> GetCustomerTransactionsAsync(
+            TenantErpDbContext db, int customerId)
+        {
+            return await db.LoyaltyTransactions
+                .AsNoTracking()
+                .Include(t => t.Order)
+                .Where(t => t.CustomerId == customerId)
+                .OrderByDescending(t => t.TransactionDate)
+                .Select(t => new LoyaltyTransactionDto
+                {
+                    LoyaltyTransactionId = t.LoyaltyTransactionId,
+                    CustomerId = t.CustomerId,
+                    OrderId = t.OrderId,
+                    OrderNumber = t.Order != null ? t.Order.OrderNumber : null,
+                    TransactionType = t.TransactionType,
+                    PointsChange = t.PointsChange,
+                    PointsBalance = t.PointsBalance,
+                    Description = t.Description,
+                    Reference = t.Reference,
+                    TransactionDate = t.TransactionDate
+                })
+                .ToListAsync();
+        }
+
+        // ============================================================
+        // CUSTOMER SUMMARY (used by customer detail panel)
+        // ============================================================
+        public async Task<LoyaltyCustomerDto?> GetCustomerSummaryAsync(
+            TenantErpDbContext db, int customerId)
+        {
+            var cl = await db.CustomerLoyalties
+                .AsNoTracking()
+                .Include(x => x.Customer)
+                .Include(x => x.LoyaltyTier)
+                .FirstOrDefaultAsync(x => x.CustomerId == customerId);
+
+            if (cl == null)
+            {
+                var c = await db.Customers.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.CustomerId == customerId);
+                if (c == null) return null;
+
+                return new LoyaltyCustomerDto
+                {
+                    CustomerId = c.CustomerId,
+                    CustomerCode = c.CustomerCode,
+                    CustomerName = (c.FirstName + " " + c.LastName).Trim(),
+                    Phone = c.PhonePrimary,
+                    Email = c.Email,
+                    CurrentPoints = 0,
+                    TotalPointsEarned = 0,
+                    TotalPointsRedeemed = 0,
+                    LifetimeSpend = 0m,
+                    IsActive = true
+                };
+            }
+
+            return new LoyaltyCustomerDto
+            {
+                CustomerId = cl.CustomerId,
+                CustomerCode = cl.Customer!.CustomerCode,
+                CustomerName = (cl.Customer.FirstName + " " + cl.Customer.LastName).Trim(),
+                Phone = cl.Customer.PhonePrimary,
+                Email = cl.Customer.Email,
+                LoyaltyTierId = cl.LoyaltyTierId,
+                TierName = cl.LoyaltyTier != null ? cl.LoyaltyTier.TierName : null,
+                CurrentPoints = cl.CurrentPoints,
+                TotalPointsEarned = cl.TotalPointsEarned,
+                TotalPointsRedeemed = cl.TotalPointsRedeemed,
+                LifetimeSpend = cl.LifetimeSpend,
+                LastActivityDate = cl.LastActivityDate,
+                IsActive = cl.IsActive
+            };
+        }
+// ============================================================
+        // EARN POINTS ON ORDER PICKUP
+        // ============================================================
+        // ============================================================
+        // REDEEMABLE INFO (used by payment page)
+        // ============================================================
+        public async Task<RedeemableInfoDto?> GetRedeemableInfoAsync(
+            TenantErpDbContext db, int customerId, decimal orderTotal)
+        {
+            var settings = await db.LoyaltySettings.AsNoTracking().FirstOrDefaultAsync();
+            if (settings == null || !settings.IsActive) return null;
+            if (settings.RedeemPointsRequired <= 0) return null;
+
+            var loyalty = await db.CustomerLoyalties.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+
+            int points = loyalty?.CurrentPoints ?? 0;
+            int required = (int)Math.Floor(settings.RedeemPointsRequired);
+
+            int batches = required > 0 ? points / required : 0;
+            int maxPoints = batches * required;
+            decimal maxDiscount = batches * settings.RedeemDiscountAmount;
+
+            if (maxDiscount > orderTotal)
+            {
+                maxDiscount = orderTotal;
+                if (settings.RedeemDiscountAmount > 0)
+                {
+                    int capBatches = (int)Math.Floor(maxDiscount / settings.RedeemDiscountAmount);
+                    batches = capBatches;
+                    maxPoints = capBatches * required;
+                    maxDiscount = capBatches * settings.RedeemDiscountAmount;
+                }
+            }
+
+            return new RedeemableInfoDto
+            {
+                CustomerId = customerId,
+                CurrentPoints = points,
+                PointsRequired = required,
+                DiscountPerBatch = settings.RedeemDiscountAmount,
+                RedeemableBatches = batches,
+                MaxRedeemablePoints = maxPoints,
+                MaxDiscount = maxDiscount
+            };
+        }
+
+        // ============================================================
+        // REDEEM POINTS (atomic)
+        // ============================================================
+        public async Task<int> RedeemPointsAsync(
+            TenantErpDbContext db, int customerId, int orderId,
+            int pointsRequested, string? userId)
+        {
+            if (pointsRequested <= 0) return 0;
+
+            var settings = await db.LoyaltySettings.AsNoTracking().FirstOrDefaultAsync();
+            if (settings == null || !settings.IsActive) return 0;
+            if (settings.RedeemPointsRequired <= 0) return 0;
+
+            int required = (int)Math.Floor(settings.RedeemPointsRequired);
+            int maxBatchesRequested = pointsRequested / required;
+            if (maxBatchesRequested <= 0) return 0;
+
+            var loyalty = await db.CustomerLoyalties
+                .FirstOrDefaultAsync(c => c.CustomerId == customerId);
+            if (loyalty == null) return 0;
+
+            int batchesAffordable = loyalty.CurrentPoints / required;
+            int batches = Math.Min(maxBatchesRequested, batchesAffordable);
+            if (batches <= 0) return 0;
+
+            var order = await db.Orders.FirstOrDefaultAsync(o => o.OrderId == orderId);
+            if (order == null) return 0;
+
+            decimal outstanding = order.TotalAmount - order.DiscountAmount;
+            if (outstanding < 0) outstanding = 0;
+
+            if (settings.RedeemDiscountAmount > 0)
+            {
+                int capByOrder = (int)Math.Floor(outstanding / settings.RedeemDiscountAmount);
+                if (capByOrder < batches) batches = capByOrder;
+            }
+            if (batches <= 0) return 0;
+
+            int pointsToDeduct = batches * required;
+            decimal discountToApply = batches * settings.RedeemDiscountAmount;
+
+            loyalty.CurrentPoints -= pointsToDeduct;
+            loyalty.TotalPointsRedeemed += pointsToDeduct;
+            loyalty.UpdatedAt = DateTime.UtcNow;
+            loyalty.LastActivityDate = DateTime.UtcNow;
+
+            order.DiscountAmount += discountToApply;
+            order.TotalAmount -= discountToApply;
+            order.UpdatedAt = DateTime.UtcNow;
+
+            db.LoyaltyTransactions.Add(new LoyaltyTransaction
+            {
+                CustomerId = customerId,
+                OrderId = orderId,
+                TransactionType = "Redeem",
+                PointsChange = -pointsToDeduct,
+                PointsBalance = loyalty.CurrentPoints,
+                Description = $"Redeemed {pointsToDeduct} pts for PHP {discountToApply:0.00} off on {order.OrderNumber}",
+                Reference = $"Order {order.OrderNumber}",
+                TransactionDate = DateTime.UtcNow
+            });
+
+            await db.SaveChangesAsync();
+            return pointsToDeduct;
+        }
+
+        public async Task EvaluateEarningAsync(
+            TenantErpDbContext db, int orderId, string? userId)
+        {
+            // 1) Settings must exist and be active
+            var settings = await db.LoyaltySettings.AsNoTracking().FirstOrDefaultAsync();
+            if (settings == null || !settings.IsActive) return;
+
+            // 2) Load order
+            var order = await db.Orders
+                .AsNoTracking()
+                .Include(o => o.Status)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
+            if (order == null) return;
+
+            // Only earn when the order is Picked Up
+            if (order.Status == null || order.Status.StatusCode != "PU")
+                return;
+
+            // 3) Idempotency — has this order already earned?
+            bool alreadyEarned = await db.LoyaltyTransactions
+                .AnyAsync(t => t.OrderId == orderId && t.TransactionType == "Earn");
+            if (alreadyEarned) return;
+
+            // 4) Load or create CustomerLoyalty
+            var loyalty = await db.CustomerLoyalties
+                .FirstOrDefaultAsync(cl => cl.CustomerId == order.CustomerId);
+            if (loyalty == null)
+            {
+                loyalty = new CustomerLoyalty
+                {
+                    CustomerId = order.CustomerId,
+                    CurrentPoints = 0,
+                    TotalPointsEarned = 0,
+                    TotalPointsRedeemed = 0,
+                    LifetimeSpend = 0m,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                db.CustomerLoyalties.Add(loyalty);
+            }
+
+            // 5) Resolve current tier (based on points BEFORE this earn)
+            int currentPoints = loyalty.CurrentPoints;
+            var tier = await db.LoyaltyTiers.AsNoTracking()
+                .Where(t => t.IsActive
+                         && t.MinPoints <= currentPoints
+                         && (!t.MaxPoints.HasValue || currentPoints <= t.MaxPoints.Value))
+                .OrderByDescending(t => t.MinPoints)
+                .FirstOrDefaultAsync();
+
+            decimal multiplier = tier?.PointsMultiplier ?? 1.0m;
+
+            // 6) Compute earned points
+            decimal raw = settings.PointsPerOrder
+                        + (order.TotalAmount * settings.PointsPerDollar);
+            int earned = (int)Math.Floor(raw * multiplier);
+
+            if (earned <= 0) return;
+
+            // 7) Update aggregates
+            loyalty.CurrentPoints += earned;
+            loyalty.TotalPointsEarned += earned;
+            loyalty.LifetimeSpend += order.TotalAmount;
+            loyalty.LastActivityDate = DateTime.UtcNow;
+            loyalty.UpdatedAt = DateTime.UtcNow;
+
+            // 8) Recompute tier AFTER earning
+            int newPoints = loyalty.CurrentPoints;
+            var newTier = await db.LoyaltyTiers.AsNoTracking()
+                .Where(t => t.IsActive
+                         && t.MinPoints <= newPoints
+                         && (!t.MaxPoints.HasValue || newPoints <= t.MaxPoints.Value))
+                .OrderByDescending(t => t.MinPoints)
+                .FirstOrDefaultAsync();
+            loyalty.LoyaltyTierId = newTier?.LoyaltyTierId;
+
+            // 9) Ledger entry
+            db.LoyaltyTransactions.Add(new LoyaltyTransaction
+            {
+                CustomerId = order.CustomerId,
+                OrderId = orderId,
+                TransactionType = "Earn",
+                PointsChange = earned,
+                PointsBalance = loyalty.CurrentPoints,
+                Description = $"Earned on order {order.OrderNumber}",
+                Reference = tier != null ? $"Tier: {tier.TierName} ({multiplier:0.##}x)" : null,
+                TransactionDate = DateTime.UtcNow
+            });
+
+            await db.SaveChangesAsync();
+        }
+private static LoyaltySettingDto MapSetting(LoyaltySetting s) => new()
+        {
+            LoyaltySettingId = s.LoyaltySettingId,
+            PointsPerOrder = s.PointsPerOrder,
+            PointsPerDollar = s.PointsPerDollar,
+            RedeemPointsRequired = s.RedeemPointsRequired,
+            RedeemDiscountAmount = s.RedeemDiscountAmount,
+            PointsExpiryDays = s.PointsExpiryDays,
+            IsActive = s.IsActive,
+            UpdatedAt = s.UpdatedAt
+        };
+
+        private static LoyaltyTierDto MapTier(LoyaltyTier t) => new()
+        {
+            LoyaltyTierId = t.LoyaltyTierId,
+            TierName = t.TierName,
+            MinPoints = t.MinPoints,
+            MaxPoints = t.MaxPoints,
+            DiscountPercentage = t.DiscountPercentage,
+            PointsMultiplier = t.PointsMultiplier,
+            BenefitsJSON = t.BenefitsJSON,
+            IsActive = t.IsActive,
+            SortOrder = t.SortOrder,
+            CreatedAt = t.CreatedAt
+        };
+    }
+}
+
+
+
+

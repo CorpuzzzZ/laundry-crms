@@ -114,6 +114,56 @@ namespace CRM.infrastructure.Services
             if (!assignable.Contains(dto.Role))
                 throw new InvalidOperationException($"Role '{dto.Role}' is not assignable.");
 
+            // Plan 2 enforcement: only 1 manager and 1 crew
+            var activeSub = await _db.TenantSubscriptions
+                .Include(ts => ts.Plan)
+                .Where(ts => ts.CompanyId == companyId && ts.IsActive)
+                .OrderByDescending(ts => ts.StartDate)
+                .FirstOrDefaultAsync();
+
+            var currentPlan = activeSub?.Plan;
+            bool isPlan2 = currentPlan != null && (currentPlan.PlanCode == "PLAN2" || currentPlan.PlanId == 2 || (currentPlan.PlanName != null && currentPlan.PlanName.Contains("Plan 2", StringComparison.OrdinalIgnoreCase)));
+
+            if (isPlan2)
+            {
+                if (dto.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))
+                {
+                    var managerRole = await _roleManager.FindByNameAsync("Manager");
+                    if (managerRole != null)
+                    {
+                        var managerCount = await _db.UserRoles
+                            .Where(ur => ur.RoleId == managerRole.Id)
+                            .Join(_db.Users.Where(u => u.CompanyId == companyId && !u.IsArchived),
+                                  ur => ur.UserId,
+                                  u => u.Id,
+                                  (ur, u) => u)
+                            .CountAsync();
+                        if (managerCount >= 1)
+                        {
+                            throw new InvalidOperationException("Plan 2 allows a maximum of 1 Manager account. You have already reached this limit.");
+                        }
+                    }
+                }
+                else if (dto.Role.Equals("Crew", StringComparison.OrdinalIgnoreCase))
+                {
+                    var crewRole = await _roleManager.FindByNameAsync("Crew");
+                    if (crewRole != null)
+                    {
+                        var crewCount = await _db.UserRoles
+                            .Where(ur => ur.RoleId == crewRole.Id)
+                            .Join(_db.Users.Where(u => u.CompanyId == companyId && !u.IsArchived),
+                                  ur => ur.UserId,
+                                  u => u.Id,
+                                  (ur, u) => u)
+                            .CountAsync();
+                        if (crewCount >= 1)
+                        {
+                            throw new InvalidOperationException("Plan 2 allows a maximum of 1 Crew account. You have already reached this limit.");
+                        }
+                    }
+                }
+            }
+
             // Ã¢â€â‚¬Ã¢â€â‚¬ Duplicate email check Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             var existing = await _userManager.FindByEmailAsync(dto.Email);
             if (existing != null)
@@ -180,6 +230,56 @@ namespace CRM.infrastructure.Services
             var currentRoles = await _userManager.GetRolesAsync(user);
             if (!currentRoles.Contains(dto.Role))
             {
+                // Plan 2 enforcement: only 1 manager and 1 crew
+                var activeSub = await _db.TenantSubscriptions
+                    .Include(ts => ts.Plan)
+                    .Where(ts => ts.CompanyId == companyId && ts.IsActive)
+                    .OrderByDescending(ts => ts.StartDate)
+                    .FirstOrDefaultAsync();
+
+                var currentPlan = activeSub?.Plan;
+                bool isPlan2 = currentPlan != null && (currentPlan.PlanCode == "PLAN2" || currentPlan.PlanId == 2 || (currentPlan.PlanName != null && currentPlan.PlanName.Contains("Plan 2", StringComparison.OrdinalIgnoreCase)));
+
+                if (isPlan2)
+                {
+                    if (dto.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var managerRole = await _roleManager.FindByNameAsync("Manager");
+                        if (managerRole != null)
+                        {
+                            var managerCount = await _db.UserRoles
+                                .Where(ur => ur.RoleId == managerRole.Id)
+                                .Join(_db.Users.Where(u => u.CompanyId == companyId && !u.IsArchived && u.Id != userId),
+                                      ur => ur.UserId,
+                                      u => u.Id,
+                                      (ur, u) => u)
+                                .CountAsync();
+                            if (managerCount >= 1)
+                            {
+                                throw new InvalidOperationException("Plan 2 allows a maximum of 1 Manager account. You have already reached this limit.");
+                            }
+                        }
+                    }
+                    else if (dto.Role.Equals("Crew", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var crewRole = await _roleManager.FindByNameAsync("Crew");
+                        if (crewRole != null)
+                        {
+                            var crewCount = await _db.UserRoles
+                                .Where(ur => ur.RoleId == crewRole.Id)
+                                .Join(_db.Users.Where(u => u.CompanyId == companyId && !u.IsArchived && u.Id != userId),
+                                      ur => ur.UserId,
+                                      u => u.Id,
+                                      (ur, u) => u)
+                                .CountAsync();
+                            if (crewCount >= 1)
+                            {
+                                throw new InvalidOperationException("Plan 2 allows a maximum of 1 Crew account. You have already reached this limit.");
+                            }
+                        }
+                    }
+                }
+
                 await _userManager.RemoveFromRolesAsync(user, currentRoles);
                 await _userManager.AddToRoleAsync(user, dto.Role);
             }

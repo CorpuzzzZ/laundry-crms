@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace CRM.Domain.DTOs.Orders
 {
@@ -8,5 +8,6 @@ namespace CRM.Domain.DTOs.Orders
         public int StatusId { get; set; }
 
         public string? Notes { get; set; }
+        public string? ChangedByName { get; set; }
     }
 }

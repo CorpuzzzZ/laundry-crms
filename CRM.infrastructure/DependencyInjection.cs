@@ -22,16 +22,28 @@ namespace CRM.infrastructure
                 ?? "Server=(localdb)\\MSSQLLocalDB;Database=MSME_MasterERP;Trusted_Connection=True;MultipleActiveResultSets=True;";
 
             services.AddDbContext<MasterErpDbContext>(options =>
-                options.UseSqlServer(masterConnectionString));
+                options.UseSqlServer(masterConnectionString, sql =>
+                    sql.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorNumbersToAdd: null)));
 
             var tenantConnectionString = configuration.GetConnectionString("TenantErp")
                 ?? "Server=(localdb)\\MSSQLLocalDB;Database=MSME_TenantERP;Trusted_Connection=True;MultipleActiveResultSets=True;";
 
             services.AddDbContext<TenantDbContext>(options =>
-                options.UseSqlServer(tenantConnectionString));
+                options.UseSqlServer(tenantConnectionString, sql =>
+                    sql.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorNumbersToAdd: null)));
 
             services.AddDbContext<TenantErpDbContext>(options =>
-                options.UseSqlServer(tenantConnectionString));
+                options.UseSqlServer(tenantConnectionString, sql =>
+                    sql.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorNumbersToAdd: null)));
 
             // ============================================================
             // IDENTITY
@@ -55,7 +67,7 @@ namespace CRM.infrastructure
 
             // ============================================================
             // SERVICES
-            // ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Use fully qualified names to avoid ambiguity between
+            // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Use fully qualified names to avoid ambiguity between
             //    Data.Context.TenantDbContextFactory and
             //    Services.TenantDbContextFactory
             // ============================================================
@@ -67,7 +79,14 @@ namespace CRM.infrastructure
                 CRM.infrastructure.Services.PermissionService>();
             services.AddScoped<IOrderService,
                 CRM.infrastructure.Services.OrderService>();
-            services.AddScoped<ICustomerService,
+            
+            services.AddScoped<ILoyaltyService,
+                CRM.infrastructure.Services.LoyaltyService>();
+            services.AddScoped<IDashboardService,
+                CRM.infrastructure.Services.DashboardService>();
+            services.AddScoped<IReportService,
+                CRM.infrastructure.Services.ReportService>();
+services.AddScoped<ICustomerService,
                 CRM.infrastructure.Services.CustomerService>();
             services.AddScoped<ICustomerInteractionService,
                 CRM.infrastructure.Services.CustomerInteractionService>();
@@ -77,8 +96,19 @@ namespace CRM.infrastructure
                 CRM.infrastructure.Services.UserService>();
             services.AddScoped<IServiceService,
                 CRM.infrastructure.Services.ServiceService>();
+            services.AddScoped<ISubscriptionService,
+                CRM.infrastructure.Services.SubscriptionService>();
+            services.AddScoped<ITermsService,
+                CRM.infrastructure.Services.TermsService>();
+            services.AddScoped<ISuperAdminDashboardService,
+                CRM.infrastructure.Services.SuperAdminDashboardService>();
+            services.AddScoped<ISuperAdminReportService,
+                CRM.infrastructure.Services.SuperAdminReportService>();
 
             return services;
         }
     }
 }
+
+
+

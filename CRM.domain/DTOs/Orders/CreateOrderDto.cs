@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
@@ -56,5 +56,9 @@ namespace CRM.Domain.DTOs.Orders
         public decimal DiscountAmount { get; set; } = 0;
 
         public string? SpecialInstructions { get; set; }
+
+        public List<string> AddOns { get; set; } = new();
+        public decimal? WeightKg { get; set; }
+        public string? CategoryName { get; set; }
     }
 }

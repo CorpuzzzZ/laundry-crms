@@ -1,4 +1,4 @@
-namespace CRM.Domain.DTOs.Orders
+﻿namespace CRM.Domain.DTOs.Orders
 {
     public class OrderItemDto
     {
@@ -14,5 +14,8 @@ namespace CRM.Domain.DTOs.Orders
         public string? SpecialInstructions { get; set; }
         public bool IsCompleted { get; set; }
         public DateTime? CompletedAt { get; set; }
+        public System.Collections.Generic.List<string> AddOns { get; set; } = new();
+        public decimal? WeightKg { get; set; }
+        public string? CategoryName { get; set; }
     }
 }

@@ -10,14 +10,19 @@ namespace CRM.Domain.Common
             {
                 // ============================================================
                 // SUPER ADMIN
-                //   Full system control EXCEPT:
-                //     - Orders (by design)
-                //     - Customer mutations (only read)
+                //   Platform / System administration only:
+                //     - Subscription & Terms
+                //     - High-level Reports & Dashboard
+                //   NO access to tenant operational modules:
+                //     - Branch Management
+                //     - Service Management
+                //     - User Management
+                //     - Customer Management
+                //     - Loyalty Management
+                //     - Order Management
                 // ============================================================
                 ["SuperAdmin"] = new[]
                 {
-                    Permissions.CustomerInteractionRead,
-                    Permissions.CustomerOrderHistoryRead,
                     Permissions.SubscriptionManage,
                     Permissions.TermsManage,
 
@@ -26,33 +31,6 @@ namespace CRM.Domain.Common
                     Permissions.ReportsExport,
 
                     Permissions.DashboardRead,
-
-                    Permissions.BranchRead,
-                    Permissions.BranchCreate,
-                    Permissions.BranchUpdate,
-                    Permissions.BranchDelete,
-
-                    Permissions.ServiceRead,
-                    Permissions.ServiceCreate,
-                    Permissions.ServiceUpdate,
-                    Permissions.ServiceDelete,
-
-                    Permissions.UserRead,
-                    Permissions.UserCreate,
-                    Permissions.UserUpdate,
-                    Permissions.UserDelete,
-
-                    // Customer: READ ONLY
-                    Permissions.CustomerRead,
-                    // NO CustomerCreate
-                    // NO CustomerUpdate
-                    // NO CustomerDelete
-
-                    Permissions.LoyaltyRead,
-                    Permissions.LoyaltyRedeem,
-                    Permissions.LoyaltyManage,
-
-                    // NO Order permissions
                 },
 
                 // ============================================================
@@ -125,7 +103,13 @@ namespace CRM.Domain.Common
                     Permissions.CustomerInteractionUpdate,
                     Permissions.CustomerOrderHistoryRead,
                     Permissions.ReportsRead,
+                    Permissions.ReportsExport,
                     Permissions.DashboardRead,
+
+                    // User Management (Manager can manage Crew for their branch)
+                    Permissions.UserRead,
+                    Permissions.UserCreate,
+                    Permissions.UserUpdate,
 
                     Permissions.ServiceRead,
                     Permissions.ServiceCreate,
@@ -135,7 +119,7 @@ namespace CRM.Domain.Common
                     Permissions.CustomerRead,
                     // NO CustomerCreate
                     // NO CustomerUpdate
-                    Permissions.CustomerDelete, // â† "Deactivate" permission
+                    Permissions.CustomerDelete, // ← "Deactivate" permission
 
                     Permissions.LoyaltyRead,
                     Permissions.LoyaltyRedeem,

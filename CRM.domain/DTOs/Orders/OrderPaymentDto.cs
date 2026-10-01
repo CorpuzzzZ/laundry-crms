@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace CRM.Domain.DTOs.Orders
@@ -13,6 +13,7 @@ namespace CRM.Domain.DTOs.Orders
         public DateTime PaymentDate { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? Notes { get; set; }
+        public string? ReceivedByName { get; set; }
     }
 
     public class CreateOrderPaymentDto
@@ -26,5 +27,8 @@ namespace CRM.Domain.DTOs.Orders
 
         public string? ReferenceNumber { get; set; }
         public string? Notes { get; set; }
+        public string? ReceivedByName { get; set; }
+        public int LoyaltyPointsToRedeem { get; set; } = 0;
     }
 }
+

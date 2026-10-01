@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace CRM.Domain.Entities.TenantDb
 {
@@ -8,6 +8,7 @@ namespace CRM.Domain.Entities.TenantDb
         public int OrderId { get; set; }
         public int StatusId { get; set; }
         public string? ChangedByUserId { get; set; }
+        public string? ChangedByName { get; set; }
         public string? Notes { get; set; }
         public DateTime ChangedAt { get; set; } = DateTime.UtcNow;
 

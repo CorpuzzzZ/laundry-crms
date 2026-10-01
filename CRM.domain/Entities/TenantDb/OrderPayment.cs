@@ -12,6 +12,8 @@ namespace CRM.Domain.Entities.TenantDb
         public DateTime PaymentDate { get; set; } = DateTime.UtcNow;
         public string Status { get; set; } = "Completed";
         public string? Notes { get; set; }
+        public string? ReceivedByUserId { get; set; }
+        public string? ReceivedByName { get; set; }
 
         public virtual Order? Order { get; set; }
         public virtual PaymentMethod? PaymentMethod { get; set; }

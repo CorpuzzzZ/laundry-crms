@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace CRM.Domain.Entities.TenantDb
@@ -16,6 +16,9 @@ namespace CRM.Domain.Entities.TenantDb
         public string? SpecialInstructions { get; set; }
         public bool IsCompleted { get; set; } = false;
         public DateTime? CompletedAt { get; set; }
+        public string? AddOnsJson { get; set; }
+        public decimal? WeightKg { get; set; }
+        public string? CategoryName { get; set; }
 
         // Navigation Properties
         public virtual Order? Order { get; set; }

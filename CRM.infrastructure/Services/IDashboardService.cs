@@ -1,0 +1,17 @@
+﻿using System;
+using System.Threading.Tasks;
+using CRM.Domain.DTOs.Dashboard;
+using CRM.infrastructure.Data.Context;
+
+namespace CRM.infrastructure.Services
+{
+    public interface IDashboardService
+    {
+        Task<CrewDashboardDto> GetCrewDashboardAsync(
+            TenantErpDbContext db, DateTime fromUtc, DateTime toUtc);
+
+        Task<AdminDashboardDto> GetAdminDashboardAsync(
+            TenantErpDbContext db, DateTime fromUtc, DateTime toUtc);
+    }
+}
+

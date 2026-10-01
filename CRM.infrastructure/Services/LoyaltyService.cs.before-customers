@@ -1,0 +1,148 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using CRM.Domain.DTOs.Loyalty;
+using CRM.Domain.Entities.TenantDb;
+using CRM.infrastructure.Data.Context;
+
+namespace CRM.infrastructure.Services
+{
+    public class LoyaltyService : ILoyaltyService
+    {
+        // ============================================================
+        // SETTINGS
+        // ============================================================
+        public async Task<LoyaltySettingDto?> GetSettingsAsync(TenantErpDbContext db)
+        {
+            var s = await db.LoyaltySettings.AsNoTracking().FirstOrDefaultAsync();
+            return s == null ? null : MapSetting(s);
+        }
+
+        public async Task<LoyaltySettingDto?> UpdateSettingsAsync(
+            TenantErpDbContext db, UpdateLoyaltySettingDto dto, string? userId)
+        {
+            var s = await db.LoyaltySettings.FirstOrDefaultAsync();
+
+            // First-time creation — seed a single row
+            if (s == null)
+            {
+                s = new LoyaltySetting();
+                db.LoyaltySettings.Add(s);
+            }
+
+            s.PointsPerOrder = dto.PointsPerOrder;
+            s.PointsPerDollar = dto.PointsPerDollar;
+            s.RedeemPointsRequired = dto.RedeemPointsRequired;
+            s.RedeemDiscountAmount = dto.RedeemDiscountAmount;
+            s.PointsExpiryDays = dto.PointsExpiryDays;
+            s.IsActive = dto.IsActive;
+            s.UpdatedAt = DateTime.UtcNow;
+            s.UpdatedBy = int.TryParse(userId, out var uid) ? uid : (int?)null;
+
+            await db.SaveChangesAsync();
+            return MapSetting(s);
+        }
+
+        // ============================================================
+        // TIERS
+        // ============================================================
+        public async Task<List<LoyaltyTierDto>> GetTiersAsync(TenantErpDbContext db)
+        {
+            return await db.LoyaltyTiers.AsNoTracking()
+                .OrderBy(t => t.SortOrder).ThenBy(t => t.MinPoints)
+                .Select(t => MapTier(t))
+                .ToListAsync();
+        }
+
+        public async Task<LoyaltyTierDto?> GetTierByIdAsync(TenantErpDbContext db, int tierId)
+        {
+            var t = await db.LoyaltyTiers.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            return t == null ? null : MapTier(t);
+        }
+
+        public async Task<LoyaltyTierDto> CreateTierAsync(
+            TenantErpDbContext db, CreateLoyaltyTierDto dto)
+        {
+            var t = new LoyaltyTier
+            {
+                TierName = dto.TierName.Trim(),
+                MinPoints = dto.MinPoints,
+                MaxPoints = dto.MaxPoints,
+                DiscountPercentage = dto.DiscountPercentage,
+                PointsMultiplier = dto.PointsMultiplier,
+                BenefitsJSON = dto.BenefitsJSON,
+                IsActive = dto.IsActive,
+                SortOrder = dto.SortOrder,
+                CreatedAt = DateTime.UtcNow
+            };
+            db.LoyaltyTiers.Add(t);
+            await db.SaveChangesAsync();
+            return MapTier(t);
+        }
+
+        public async Task<LoyaltyTierDto?> UpdateTierAsync(
+            TenantErpDbContext db, int tierId, UpdateLoyaltyTierDto dto)
+        {
+            var t = await db.LoyaltyTiers.FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            if (t == null) return null;
+
+            t.TierName = dto.TierName.Trim();
+            t.MinPoints = dto.MinPoints;
+            t.MaxPoints = dto.MaxPoints;
+            t.DiscountPercentage = dto.DiscountPercentage;
+            t.PointsMultiplier = dto.PointsMultiplier;
+            t.BenefitsJSON = dto.BenefitsJSON;
+            t.IsActive = dto.IsActive;
+            t.SortOrder = dto.SortOrder;
+
+            await db.SaveChangesAsync();
+            return MapTier(t);
+        }
+
+        public async Task<bool> DeleteTierAsync(TenantErpDbContext db, int tierId)
+        {
+            var t = await db.LoyaltyTiers.FirstOrDefaultAsync(x => x.LoyaltyTierId == tierId);
+            if (t == null) return false;
+
+            // Prevent deleting a tier that customers are already assigned to.
+            bool inUse = await db.CustomerLoyalties.AnyAsync(c => c.LoyaltyTierId == tierId);
+            if (inUse) return false;
+
+            db.LoyaltyTiers.Remove(t);
+            await db.SaveChangesAsync();
+            return true;
+        }
+
+        // ============================================================
+        // MAPPERS
+        // ============================================================
+        private static LoyaltySettingDto MapSetting(LoyaltySetting s) => new()
+        {
+            LoyaltySettingId = s.LoyaltySettingId,
+            PointsPerOrder = s.PointsPerOrder,
+            PointsPerDollar = s.PointsPerDollar,
+            RedeemPointsRequired = s.RedeemPointsRequired,
+            RedeemDiscountAmount = s.RedeemDiscountAmount,
+            PointsExpiryDays = s.PointsExpiryDays,
+            IsActive = s.IsActive,
+            UpdatedAt = s.UpdatedAt
+        };
+
+        private static LoyaltyTierDto MapTier(LoyaltyTier t) => new()
+        {
+            LoyaltyTierId = t.LoyaltyTierId,
+            TierName = t.TierName,
+            MinPoints = t.MinPoints,
+            MaxPoints = t.MaxPoints,
+            DiscountPercentage = t.DiscountPercentage,
+            PointsMultiplier = t.PointsMultiplier,
+            BenefitsJSON = t.BenefitsJSON,
+            IsActive = t.IsActive,
+            SortOrder = t.SortOrder,
+            CreatedAt = t.CreatedAt
+        };
+    }
+}

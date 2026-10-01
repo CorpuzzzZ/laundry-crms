@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace CRM.Domain.DTOs.Orders
@@ -31,5 +31,6 @@ namespace CRM.Domain.DTOs.Orders
         public DateTime CreatedAt { get; set; }
         public List<OrderItemDto> Items { get; set; } = new();
         public List<OrderPaymentDto> Payments { get; set; } = new();
+        public List<OrderStatusHistoryDto> StatusHistory { get; set; } = new();
     }
 }

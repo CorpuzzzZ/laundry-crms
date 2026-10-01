@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -16,15 +16,18 @@ namespace CRM.api.Controllers.v1
     public class OrdersController : TenantControllerBase
     {
         private readonly IOrderService _orderService;
+        private readonly ILoyaltyService _loyaltyService;
 
         public OrdersController(
             ITenantDbContextFactory tenantFactory,
             IPermissionService permissionService,
             IHttpContextAccessor httpContextAccessor,
-            IOrderService orderService)
+            IOrderService orderService,
+            ILoyaltyService loyaltyService)
             : base(tenantFactory, permissionService, httpContextAccessor)
         {
             _orderService = orderService;
+            _loyaltyService = loyaltyService;
         }
 
         // ============================================================
@@ -148,6 +151,20 @@ namespace CRM.api.Controllers.v1
                 await using var db = await GetTenantDbAsync();
                 var order = await _orderService.ChangeStatusAsync(db, id, dto, UserId);
 
+
+
+                if (order != null)
+                {
+                    try
+                    {
+                        await _loyaltyService.EvaluateEarningAsync(db, id, UserId);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Loyalty] Earn evaluation failed for order {id}: {ex.Message}");
+                    }
+                }
+
                 return order == null
                     ? NotFound(new { success = false, message = $"Order {id} not found." })
                     : Success(order, "Order status updated.");
@@ -171,7 +188,26 @@ namespace CRM.api.Controllers.v1
             try
             {
                 await using var db = await GetTenantDbAsync();
-                var payment = await _orderService.AddPaymentAsync(db, id, dto);
+
+                // Redeem loyalty points before recording the payment, if requested.
+                if (dto.LoyaltyPointsToRedeem > 0)
+                {
+                    var order = await _orderService.GetOrderByIdAsync(db, id);
+                    if (order == null)
+                        return NotFound(new { success = false, message = $"Order {id} not found." });
+
+                    try
+                    {
+                        await _loyaltyService.RedeemPointsAsync(
+                            db, order.CustomerId, id, dto.LoyaltyPointsToRedeem, UserId);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Loyalty] Redeem failed for order {id}: {ex.Message}");
+                    }
+                }
+
+                var payment = await _orderService.AddPaymentAsync(db, id, dto, UserId);
                 return Success(payment, "Payment recorded successfully.");
             }
             catch (InvalidOperationException ex)
@@ -289,3 +325,6 @@ namespace CRM.api.Controllers.v1
         }
     }
 }
+
+
+
