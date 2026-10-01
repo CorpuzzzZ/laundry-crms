@@ -24,10 +24,15 @@ namespace CRM.WinForms.Services
 
         public CRM.WinForms.Models.AvailedSubscriptionModel? AvailedSubscription { get; set; }
 
+        // Assigned Branch for Manager and Staff Operations
+        public int? AssignedBranchId { get; set; }
+        public string? AssignedBranchName { get; set; }
+        public System.Collections.Generic.List<int> BranchIds { get; set; } = new();
+
         // Module Access Permissions gated by Role and Subscription Plan
         public bool CanAccessBranches => !IsSuperAdmin && IsAdmin && (AvailedSubscription?.CanAccessBranches ?? true);
         public bool CanAccessServices => !IsSuperAdmin && (IsAdmin || IsManager) && (AvailedSubscription?.CanAccessServices ?? true);
-        public bool CanAccessUsers => !IsSuperAdmin && IsAdmin && (AvailedSubscription?.CanAccessUsers ?? true);
+        public bool CanAccessUsers => !IsSuperAdmin && (IsAdmin || IsManager) && (AvailedSubscription?.CanAccessUsers ?? true);
         public bool CanAccessCustomers => !IsSuperAdmin && (AvailedSubscription?.CanAccessCustomers ?? true);
         public bool CanAccessLoyalty => !IsSuperAdmin && (AvailedSubscription?.CanAccessLoyalty ?? true);
         public bool CanAccessOrders => !IsSuperAdmin && (IsAdmin || IsManager || IsCrew) && (AvailedSubscription?.CanAccessOrders ?? true);
@@ -50,8 +55,8 @@ namespace CRM.WinForms.Services
         // Subscription: SuperAdmin manages all; Admin can view their availed subscription plan.
         public bool CanAccessSubscription => IsSuperAdmin || IsAdmin;
 
-        // Terms: SuperAdmin, Admin, Manager, and Crew can access terms.
-        public bool CanAccessTerms => true;
+        // Terms: SuperAdmin, Admin, and Crew can access terms. In Manager role there is NO Terms and condition.
+        public bool CanAccessTerms => !IsManager;
 
         // Terms modification: Admin can create/edit/delete their company's terms; Crew can only view.
         public bool CanModifyTerms => IsSuperAdmin || IsAdmin;

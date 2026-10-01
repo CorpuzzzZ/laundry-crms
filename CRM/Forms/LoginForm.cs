@@ -633,7 +633,7 @@ namespace CRM.WinForms.Forms
 
                     ApiClient.Instance.SetToken(d.Token);
 
-                    if (user.IsAdmin)
+                    if (!user.IsSuperAdmin)
                     {
                         try
                         {
@@ -641,6 +641,36 @@ namespace CRM.WinForms.Forms
                             user.AvailedSubscription = await tenantApi.GetMyAvailedSubscriptionAsync();
                         }
                         catch { }
+
+                        try
+                        {
+                            var userApi = new UserApiService(ApiClient.Instance);
+                            var self = await userApi.GetByIdAsync(user.Id);
+                            if (self != null && self.BranchIds.Count > 0)
+                            {
+                                user.BranchIds = self.BranchIds;
+                                user.AssignedBranchId = self.BranchIds[0];
+                                user.AssignedBranchName = self.BranchNames.Count > 0 ? self.BranchNames[0] : $"Branch #{self.BranchIds[0]}";
+                            }
+                        }
+                        catch { }
+
+                        if (user.AssignedBranchId == null && (user.IsManager || user.IsCrew))
+                        {
+                            try
+                            {
+                                var branchApi = new BranchApiService(ApiClient.Instance);
+                                var branches = await branchApi.GetAllAsync();
+                                var firstBranch = branches.Find(b => b.IsActive) ?? (branches.Count > 0 ? branches[0] : null);
+                                if (firstBranch != null)
+                                {
+                                    user.AssignedBranchId = firstBranch.BranchId;
+                                    user.AssignedBranchName = firstBranch.BranchName;
+                                    user.BranchIds = new List<int> { firstBranch.BranchId };
+                                }
+                            }
+                            catch { }
+                        }
                     }
 
                     SessionManager.StartSession(user);

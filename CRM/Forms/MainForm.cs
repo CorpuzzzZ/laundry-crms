@@ -395,17 +395,18 @@ namespace CRM.WinForms.Forms
 
             if (user?.CanAccessBranches == true || user?.CanAccessUsers == true)
             {
-                _sidebar.AddSection("Admin");
+                var secName = user?.IsManager == true ? "Management" : "Admin";
+                _sidebar.AddSection(secName);
                 if (user?.CanAccessBranches == true)
                     _sidebar.AddItem(SidebarIcon.Branches, "Branches", "branches");
                 if (user?.CanAccessUsers == true)
-                    _sidebar.AddItem(SidebarIcon.Users, "Users", "users");
+                    _sidebar.AddItem(SidebarIcon.Users, user?.IsManager == true ? "Crew Management" : "Users", "users");
             }
 
             if (user?.CanAccessReports == true)
             {
                 _sidebar.AddSection("Insights");
-                _sidebar.AddItem(SidebarIcon.Reports, "Reports", "reports");
+                _sidebar.AddItem(SidebarIcon.Reports, user?.IsManager == true ? "Branch Reports" : "Reports", "reports");
             }
 
             if (user?.IsSuperAdmin == true)
@@ -416,12 +417,15 @@ namespace CRM.WinForms.Forms
             }
             else
             {
-                _sidebar.AddSection("Company");
-                if (user?.CanAccessSubscription == true)
-                    _sidebar.AddItem(SidebarIcon.Subscription, "Subscription", "subscription");
+                if (user?.CanAccessSubscription == true || user?.CanAccessTerms == true)
+                {
+                    _sidebar.AddSection("Company");
+                    if (user?.CanAccessSubscription == true)
+                        _sidebar.AddItem(SidebarIcon.Subscription, "Subscription", "subscription");
 
-                if (user?.CanAccessTerms == true)
-                    _sidebar.AddItem(SidebarIcon.Terms, "Terms", "terms");
+                    if (user?.CanAccessTerms == true)
+                        _sidebar.AddItem(SidebarIcon.Terms, "Terms", "terms");
+                }
             }
         }
 
@@ -575,8 +579,17 @@ namespace CRM.WinForms.Forms
                     break;
 
                 case "users":
-                    _pageTitle.Text = "User Management";
-                    _contentBody.Controls.Add(new UsersView { Dock = DockStyle.Fill });
+                    var _uUser = CRM.WinForms.Services.SessionManager.CurrentUser;
+                    if (_uUser?.IsManager == true)
+                    {
+                        _pageTitle.Text = "Branch Crew Management";
+                        _contentBody.Controls.Add(new ManagerUsersView { Dock = DockStyle.Fill });
+                    }
+                    else
+                    {
+                        _pageTitle.Text = "User Management";
+                        _contentBody.Controls.Add(new UsersView { Dock = DockStyle.Fill });
+                    }
                     break;
 
                 case "reports":
@@ -585,6 +598,11 @@ namespace CRM.WinForms.Forms
                     {
                         _pageTitle.Text = "Platform Reports";
                         _contentBody.Controls.Add(new SuperAdminReportsView { Dock = DockStyle.Fill });
+                    }
+                    else if (_repUser?.IsManager == true)
+                    {
+                        _pageTitle.Text = "Branch Performance Reports";
+                        _contentBody.Controls.Add(new ManagerReportsView { Dock = DockStyle.Fill });
                     }
                     else
                     {
